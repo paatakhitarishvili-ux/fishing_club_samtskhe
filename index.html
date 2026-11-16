@@ -89,6 +89,17 @@ body.gated #app,body.gated header{visibility:hidden}
 .shopThumb{aspect-ratio:4/3;background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:40px;overflow:hidden}
 .shopThumb img{width:100%;height:100%;object-fit:cover;display:block}
 .shopCardBody{padding:12px}
+.sideBanner{position:fixed;top:120px;width:160px;max-height:300px;background:var(--s1);border:1px solid var(--ln);border-radius:12px;padding:10px;box-shadow:0 2px 10px rgba(0,0,0,.15);z-index:5;cursor:pointer;overflow:hidden;display:none}
+.sideBanner:empty{display:none!important}
+.sideBanner img{width:100%;border-radius:8px;display:block;margin-bottom:8px;aspect-ratio:4/3;object-fit:cover}
+.sideBanner .sbTitle{font-weight:700;font-size:13px;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.sideBanner .sbSub{font-size:12px;color:var(--mu)}
+.sideBanner .sbTag{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--mu);margin-bottom:6px}
+#bannerLeft{left:20px}
+#bannerRight{right:20px}
+@media (min-width:1480px){.sideBanner.show{display:block}}
+.bannerAdminForm{border:1px solid var(--ln);border-radius:10px;padding:12px;margin-bottom:12px}
+.bannerAdminForm h4{margin:0 0 8px;font-size:13px}
 .profAv{width:72px;height:72px;border-radius:50%;background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;overflow:hidden;flex:none}
 .profAv img{width:100%;height:100%;object-fit:cover}
 .profileMenu{position:fixed;background:var(--s1);border:1px solid var(--ln);border-radius:12px;padding:6px;display:flex;flex-direction:column;gap:2px;min-width:160px;box-shadow:0 10px 28px #0007;z-index:9000}
@@ -283,7 +294,9 @@ nav button,.navMoreMenu button{display:inline-flex;align-items:center;gap:6px}
 </div>
 <div class="agformPane"><div class="agbox" id="agbox"><div class="agspinwrap"><div class="agspin"></div></div></div></div>
 </div>
+<div class="sideBanner" id="bannerLeft"></div>
 <main id="app"></main>
+<div class="sideBanner" id="bannerRight"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
@@ -685,7 +698,9 @@ V.mine=()=>{
 
 /* ===== ფორუმი ===== */
 function forumCol(){return fbDb&&fbDb.collection('forumTopics')}
-async function forumShowList(){
+async function forumShowList(opts){
+ if(!(opts&&opts.skipPush))navState('forum');
+ setNavActive('forum');
  const app=$('#app');
  app.innerHTML=`<h1>${tr('hForum')}</h1><div style="margin-bottom:12px"><button class="btn" id="forumNewBtn">+ ${tr('forumNewTopic')}</button></div><div id="forumList" class="forumList"><div class="empty">${tr('wxLoading')}</div></div>`;
  $('#forumNewBtn').onclick=()=>forumShowEditor();
@@ -703,11 +718,14 @@ async function forumShowList(){
   list.querySelectorAll('.forumItem').forEach(b=>b.onclick=()=>forumShowTopic(b.dataset.id));
  }catch(e){$('#forumList').innerHTML=`<div class="empty">${tr('wxError')}</div>`}
 }
-function forumCommentHtml(c){
+function forumCommentHtml(c,topicId){
  const meta=cachedMeta(c.authorUid)||{displayName:c.authorName,photoURL:c.authorPhoto,online:false};
- return `<div class="card" style="margin-bottom:8px"><div class="fiTop">${avatarDotHtml(meta,24)}<div class="fiMeta"><b style="font-size:13px">${esc(meta.displayName||c.authorName||'')}</b><small>${fmtDate(c.createdAt)}</small></div></div><p style="margin-top:8px;white-space:pre-wrap">${esc(c.text)}</p></div>`;
+ const canDelete=CUR_USER&&(isAdmin()||c.authorUid===CUR_USER.uid);
+ return `<div class="card" style="margin-bottom:8px" data-cid="${c.id}"><div class="fiTop">${avatarDotHtml(meta,24)}<div class="fiMeta"><b style="font-size:13px">${esc(meta.displayName||c.authorName||'')}</b><small>${fmtDate(c.createdAt)}</small></div>${canDelete?`<button type="button" class="authlink fcDel" data-cid="${c.id}" style="margin-left:auto">${tr('forumDeleteComment')}</button>`:''}</div><p style="margin-top:8px;white-space:pre-wrap">${esc(c.text)}</p></div>`;
 }
-async function forumShowTopic(id){
+async function forumShowTopic(id,opts){
+ if(!(opts&&opts.skipPush))navState('forum/t/'+id);
+ setNavActive('forum');
  const app=$('#app');
  app.innerHTML=`<button type="button" class="authlink" id="forumBack">← ${tr('forumBack')}</button><div id="forumTopicBody"><div class="empty">${tr('wxLoading')}</div></div>`;
  $('#forumBack').onclick=()=>forumShowList();
@@ -721,8 +739,9 @@ async function forumShowTopic(id){
   await loadMetas([t.authorUid,...comments.map(c=>c.authorUid)]);
   const authorMeta=cachedMeta(t.authorUid)||{displayName:t.authorName,photoURL:t.authorPhoto,online:false};
   const body=$('#forumTopicBody');if(!body)return;
-  body.innerHTML=`<div class="card" style="margin-bottom:14px"><div class="fiTop">${avatarDotHtml(authorMeta,32)}<div class="fiMeta"><b style="font-size:17px">${esc(t.title)}</b><small>${esc(authorMeta.displayName||t.authorName||'')} · ${fmtDate(t.createdAt)}</small></div></div><p style="margin-top:12px;white-space:pre-wrap">${esc(t.body)}</p></div>
-   <div id="forumComments">${comments.map(c=>forumCommentHtml(c)).join('')||`<div class="empty">${tr('forumNoComments')}</div>`}</div>
+  const canDeleteTopic=CUR_USER&&(isAdmin()||t.authorUid===CUR_USER.uid);
+  body.innerHTML=`<div class="card" style="margin-bottom:14px"><div class="fiTop">${avatarDotHtml(authorMeta,32)}<div class="fiMeta"><b style="font-size:17px">${esc(t.title)}</b><small>${esc(authorMeta.displayName||t.authorName||'')} · ${fmtDate(t.createdAt)}</small></div>${canDeleteTopic?`<button type="button" class="authlink" id="forumDeleteTopicBtn" style="margin-left:auto">${tr('forumDeleteTopic')}</button>`:''}</div><p style="margin-top:12px;white-space:pre-wrap">${esc(t.body)}</p></div>
+   <div id="forumComments">${comments.map(c=>forumCommentHtml(c,id)).join('')||`<div class="empty">${tr('forumNoComments')}</div>`}</div>
    <form id="forumCommentForm" class="authform" style="margin-top:14px">
     <textarea id="fc_text" placeholder="${tr('forumCommentPlaceholder')}" required rows="3" style="width:100%;resize:vertical;font:inherit;background:var(--s1);color:var(--tx);border:1px solid var(--ln);border-radius:10px;padding:10px"></textarea>
     <div class="err" id="fc_err" hidden></div>
@@ -739,12 +758,34 @@ async function forumShowTopic(id){
     const photo=CUR_PROFILE.photoURL||CUR_USER.photoURL||'';
     await forumCol().doc(id).collection('comments').add({text,authorUid:CUR_USER.uid,authorName:nm,authorPhoto:photo,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
     await forumCol().doc(id).update({commentCount:firebase.firestore.FieldValue.increment(1)});
-    forumShowTopic(id);
+    forumShowTopic(id,{skipPush:true});
    }catch(ex){err.textContent=tr('authErrGeneric');err.hidden=false}
   };
+  const dtb=$('#forumDeleteTopicBtn');
+  if(dtb)dtb.onclick=async()=>{
+   if(!confirm(tr('confirmDelete')))return;
+   try{
+    const cs=await forumCol().doc(id).collection('comments').limit(500).get();
+    const batch=fbDb.batch();
+    cs.docs.forEach(d=>batch.delete(d.ref));
+    batch.delete(forumCol().doc(id));
+    await batch.commit();
+    navState('forum',{replaceOnly:true});forumShowList({skipPush:true});
+   }catch(e){}
+  };
+  body.querySelectorAll('.fcDel').forEach(b=>b.onclick=async()=>{
+   if(!confirm(tr('confirmDelete')))return;
+   try{
+    await forumCol().doc(id).collection('comments').doc(b.dataset.cid).delete();
+    await forumCol().doc(id).update({commentCount:firebase.firestore.FieldValue.increment(-1)});
+    forumShowTopic(id,{skipPush:true});
+   }catch(e){}
+  });
  }catch(e){const b=$('#forumTopicBody');if(b)b.innerHTML=`<div class="empty">${tr('wxError')}</div>`}
 }
-function forumShowEditor(){
+function forumShowEditor(opts){
+ if(!(opts&&opts.skipPush))navState('forum/new');
+ setNavActive('forum');
  const app=$('#app');
  app.innerHTML=`<button type="button" class="authlink" id="forumBack">← ${tr('forumBack')}</button>
   <h1>${tr('forumNewTopic')}</h1>
@@ -765,7 +806,7 @@ function forumShowEditor(){
    const nm=CUR_PROFILE.displayName||CUR_USER.displayName||CUR_USER.email||'';
    const photo=CUR_PROFILE.photoURL||CUR_USER.photoURL||'';
    const ref=await forumCol().add({title,body:bodyTxt,authorUid:CUR_USER.uid,authorName:nm,authorPhoto:photo,createdAt:firebase.firestore.FieldValue.serverTimestamp(),commentCount:0});
-   forumShowTopic(ref.id);
+   navState('forum/t/'+ref.id,{replaceOnly:true});forumShowTopic(ref.id,{skipPush:true});
   }catch(ex){err.textContent=tr('authErrGeneric');err.hidden=false}
  };
 }
@@ -795,7 +836,28 @@ function resizeImageFile(file,maxDim,quality){
 }
 function shopCol(){return fbDb&&fbDb.collection('shopItems')}
 function fmtShopPrice(p){const n=Number(p);if(isNaN(n))return'';const s=n%1===0?String(n):n.toFixed(2);return s+' ₾'}
-async function shopShowList(){
+function shopInCart(id){return (CUR_PROFILE.cart||[]).includes(id)}
+async function toggleCart(id){
+ if(!CUR_USER||!fbDb)return;
+ const ref=fbDb.collection('users').doc(CUR_USER.uid);
+ try{
+  if(shopInCart(id)){
+   await ref.set({cart:firebase.firestore.FieldValue.arrayRemove(id)},{merge:true});
+   CUR_PROFILE.cart=(CUR_PROFILE.cart||[]).filter(x=>x!==id);
+  }else{
+   await ref.set({cart:firebase.firestore.FieldValue.arrayUnion(id)},{merge:true});
+   CUR_PROFILE.cart=[...(CUR_PROFILE.cart||[]),id];
+  }
+ }catch(e){}
+}
+function cartBtnHtml(id){
+ if(!CUR_USER)return'';
+ const on=shopInCart(id);
+ return `<button type="button" class="btn cartBtn" data-cart="${id}" style="${on?'background:var(--g);color:#06260f':''}">🛒 ${tr(on?'cartRemove':'cartAdd')}</button>`;
+}
+async function shopShowList(opts){
+ if(!(opts&&opts.skipPush))navState('shop');
+ setNavActive('shop');
  const app=$('#app');
  app.innerHTML=`<h1>${tr('hShop')}</h1><div style="margin-bottom:12px"><button class="btn" id="shopNewBtn">+ ${tr('shopAddItem')}</button></div><div id="shopGrid" class="grid"><div class="empty">${tr('wxLoading')}</div></div>`;
  $('#shopNewBtn').onclick=()=>shopShowEditor();
@@ -813,7 +875,8 @@ async function shopShowList(){
     <div class="shopCardBody">
      <h3 style="margin:0 0 2px;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.title)}</h3>
      ${it.subtitle?`<div class="mu" style="font-size:13px;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.subtitle)}</div>`:''}
-     <div style="font-weight:700;margin-bottom:8px">${fmtShopPrice(it.price)}</div>
+     <div style="font-weight:700;margin-bottom:4px">${fmtShopPrice(it.price)}</div>
+     <small style="color:var(--mu);display:block;margin-bottom:8px">👁 ${it.views||0}</small>
      <div class="fiTop">${avatarDotHtml(meta,20)}<small style="color:var(--mu)">${esc(meta.displayName||it.authorName||'')}</small></div>
     </div>
    </div>`;
@@ -821,7 +884,9 @@ async function shopShowList(){
   grid.querySelectorAll('.shopCard').forEach(c=>c.onclick=()=>shopShowItem(c.dataset.id));
  }catch(e){$('#shopGrid').innerHTML=`<div class="empty">${tr('wxError')}</div>`}
 }
-async function shopShowItem(id){
+async function shopShowItem(id,opts){
+ if(!(opts&&opts.skipPush))navState('shop/i/'+id);
+ setNavActive('shop');
  const app=$('#app');
  app.innerHTML=`<button type="button" class="authlink" id="shopBack">← ${tr('forumBack')}</button><div id="shopItemBody"><div class="empty">${tr('wxLoading')}</div></div>`;
  $('#shopBack').onclick=()=>shopShowList();
@@ -833,18 +898,34 @@ async function shopShowItem(id){
   await loadMetas([it.authorUid]);
   const meta=cachedMeta(it.authorUid)||{displayName:it.authorName,photoURL:it.authorPhoto,online:false};
   const body=$('#shopItemBody');if(!body)return;
+  const canDelete=CUR_USER&&(isAdmin()||it.authorUid===CUR_USER.uid);
   body.innerHTML=`<div class="card" style="max-width:560px">
    ${it.photoURL?`<img src="${it.photoURL}" alt="" style="width:100%;border-radius:10px;margin-bottom:14px;display:block">`:''}
    <h1 style="margin:0 0 4px">${esc(it.title)}</h1>
    ${it.subtitle?`<div class="mu" style="margin-bottom:6px">${esc(it.subtitle)}</div>`:''}
-   <div style="font-size:20px;font-weight:700;margin-bottom:10px">${fmtShopPrice(it.price)}</div>
+   <div style="font-size:20px;font-weight:700;margin-bottom:6px">${fmtShopPrice(it.price)}</div>
+   <small style="color:var(--mu);display:block;margin-bottom:10px">👁 ${tr('shopViews')}: ${it.views||0}</small>
    <p style="white-space:pre-wrap;margin-bottom:14px">${esc(it.description)}</p>
    <div class="card" style="background:var(--s2);margin-bottom:14px"><b>${tr('shopContactLabel')}:</b> ${esc(it.contact)}</div>
-   <div class="fiTop">${avatarDotHtml(meta,28)}<div class="fiMeta"><small>${tr('shopPostedBy')}: ${esc(meta.displayName||it.authorName||'')} · ${fmtDate(it.createdAt)}</small></div></div>
+   <div class="fiTop" style="margin-bottom:14px">${avatarDotHtml(meta,28)}<div class="fiMeta"><small>${tr('shopPostedBy')}: ${esc(meta.displayName||it.authorName||'')} · ${fmtDate(it.createdAt)}</small></div></div>
+   <div style="display:flex;gap:8px;flex-wrap:wrap">
+    ${cartBtnHtml(it.id)}
+    ${canDelete?`<button type="button" class="btn" id="shopDeleteBtn" style="background:#c0392b;color:#fff">${tr('shopDeleteItem')}</button>`:''}
+   </div>
   </div>`;
+  const cb=body.querySelector('.cartBtn');
+  if(cb)cb.onclick=async()=>{await toggleCart(it.id);shopShowItem(it.id,{skipPush:true})};
+  const db=$('#shopDeleteBtn');
+  if(db)db.onclick=async()=>{
+   if(!confirm(tr('confirmDelete')))return;
+   try{await shopCol().doc(it.id).delete();BANNER_CACHE=null;navState('shop',{replaceOnly:true});shopShowList({skipPush:true})}catch(e){}
+  };
+  shopCol().doc(id).update({views:firebase.firestore.FieldValue.increment(1)}).then(()=>{BANNER_CACHE=null}).catch(()=>{});
  }catch(e){const b=$('#shopItemBody');if(b)b.innerHTML=`<div class="empty">${tr('wxError')}</div>`}
 }
-function shopShowEditor(){
+function shopShowEditor(opts){
+ if(!(opts&&opts.skipPush))navState('shop/new');
+ setNavActive('shop');
  const app=$('#app');
  app.innerHTML=`<button type="button" class="authlink" id="shopBack">← ${tr('forumBack')}</button>
   <h1>${tr('shopAddItem')}</h1>
@@ -873,12 +954,101 @@ function shopShowEditor(){
    if(file)photoURL=await resizeImageFile(file,900,0.78);
    const nm=CUR_PROFILE.displayName||CUR_USER.displayName||CUR_USER.email||'';
    const avphoto=CUR_PROFILE.photoURL||CUR_USER.photoURL||'';
-   const ref=await shopCol().add({title,subtitle,price,description:desc,contact,photoURL,authorUid:CUR_USER.uid,authorName:nm,authorPhoto:avphoto,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-   shopShowItem(ref.id);
+   const ref=await shopCol().add({title,subtitle,price,description:desc,contact,photoURL,views:0,authorUid:CUR_USER.uid,authorName:nm,authorPhoto:avphoto,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+   BANNER_CACHE=null;
+   navState('shop/i/'+ref.id,{replaceOnly:true});shopShowItem(ref.id,{skipPush:true});
   }catch(ex){err.textContent=tr('authErrGeneric');err.hidden=false}
  };
 }
 V.shop=()=>shopShowList();
+
+/* ===== საარეკლამო ბანერები (მთავარ გვერდზე) ===== */
+let BANNER_CACHE=null,BANNER_CACHE_T=0,BANNER_GEN=0;
+async function loadBannerData(force){
+ const now=Date.now();
+ if(!force&&BANNER_CACHE&&now-BANNER_CACHE_T<300000)return BANNER_CACHE;
+ let topItems=[];
+ try{
+  if(shopCol()){
+   const snap=await shopCol().orderBy('views','desc').limit(2).get();
+   topItems=snap.docs.map(d=>({id:d.id,...d.data()}));
+  }
+ }catch(e){}
+ const settings=await getAppSettings();
+ BANNER_CACHE={topItems,left:settings.bannerLeftOverride,right:settings.bannerRightOverride};
+ BANNER_CACHE_T=now;
+ return BANNER_CACHE;
+}
+function bannerSlotRender(el,override,fallbackItem){
+ if(override&&override.enabled){
+  el.innerHTML=`${override.imageURL?`<img src="${override.imageURL}" alt="">`:''}<div class="sbTitle">${esc(override.title||'')}</div>`;
+  el.classList.add('show');
+  el.onclick=override.link?()=>window.open(override.link,'_blank'):null;
+  return;
+ }
+ if(fallbackItem){
+  el.innerHTML=`${fallbackItem.photoURL?`<img src="${fallbackItem.photoURL}" alt="">`:''}<div class="sbTitle">${esc(fallbackItem.title)}</div><div class="sbSub">${fmtShopPrice(fallbackItem.price)}</div>`;
+  el.classList.add('show');
+  el.onclick=()=>{shopRouteFromBanner(fallbackItem.id)};
+  return;
+ }
+ el.innerHTML='';el.classList.remove('show');el.onclick=null;
+}
+function shopRouteFromBanner(id){
+ navState('shop/i/'+id);
+ setNavActive('shop');
+ shopShowItem(id,{skipPush:true});
+ toggleSideBanners(false);
+}
+async function renderSideBanners(gen){
+ const L=$('#bannerLeft'),R=$('#bannerRight');if(!L||!R)return;
+ const data=await loadBannerData();
+ if(gen!==BANNER_GEN)return;
+ bannerSlotRender(L,data.left,data.topItems[0]);
+ bannerSlotRender(R,data.right,data.topItems[1]);
+}
+function toggleSideBanners(show){
+ const L=$('#bannerLeft'),R=$('#bannerRight');if(!L||!R)return;
+ BANNER_GEN++;
+ if(!show){L.classList.remove('show');R.classList.remove('show');return}
+ renderSideBanners(BANNER_GEN);
+}
+async function adminSaveBannerOverride(side){
+ const titleEl=$('#ab_'+side+'_title'),linkEl=$('#ab_'+side+'_link'),photoEl=$('#ab_'+side+'_photo'),enEl=$('#ab_'+side+'_en'),okEl=$('#ab_'+side+'_ok');
+ if(!titleEl)return;
+ const cur=(await getAppSettings())[side==='left'?'bannerLeftOverride':'bannerRightOverride']||{};
+ let imageURL=cur.imageURL||'';
+ const file=photoEl&&photoEl.files&&photoEl.files[0];
+ if(file)imageURL=await resizeImageFile(file,700,0.78);
+ const val={enabled:!!(enEl&&enEl.checked),title:titleEl.value.trim(),link:(linkEl&&linkEl.value.trim())||'',imageURL};
+ await setAppSetting(side==='left'?'bannerLeftOverride':'bannerRightOverride',val);
+ BANNER_CACHE=null;
+ if(okEl){okEl.hidden=false;setTimeout(()=>{okEl.hidden=true},2000)}
+}
+async function adminClearBannerOverride(side){
+ await setAppSetting(side==='left'?'bannerLeftOverride':'bannerRightOverride',{enabled:false,title:'',link:'',imageURL:''});
+ BANNER_CACHE=null;
+ const f=$('#ab_'+side+'_form');if(f){$('#ab_'+side+'_title').value='';$('#ab_'+side+'_link').value='';$('#ab_'+side+'_en').checked=false}
+}
+function adminBannerFormHtml(side,data){
+ const d=data||{};
+ return `<div class="bannerAdminForm" id="ab_${side}_form">
+  <h4>${tr(side==='left'?'adminBannerLeft':'adminBannerRight')}</h4>
+  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+   <input type="checkbox" id="ab_${side}_en" ${d.enabled?'checked':''}>
+   <span>${tr('bannerEnable')}</span>
+  </label>
+  <input type="text" id="ab_${side}_title" placeholder="${tr('bannerTitlePlaceholder')}" value="${esc(d.title||'')}" maxlength="80" style="margin-bottom:8px">
+  <input type="text" id="ab_${side}_link" placeholder="${tr('bannerLinkPlaceholder')}" value="${esc(d.link||'')}" maxlength="300" style="margin-bottom:8px">
+  <label style="display:block;font-size:12px;color:var(--mu);margin:4px 0">${tr('bannerImageLabel')}</label>
+  <input type="file" id="ab_${side}_photo" accept="image/*" style="margin-bottom:8px">
+  <div style="display:flex;gap:8px;align-items:center">
+   <button type="button" class="btn" id="ab_${side}_save">${tr('bannerSave')}</button>
+   <button type="button" class="authlink" id="ab_${side}_clear">${tr('bannerClear')}</button>
+   <span class="ok" id="ab_${side}_ok" hidden>✓</span>
+  </div>
+ </div>`;
+}
 
 /* ===== პროფილის გვერდი ===== */
 function profileHandlePhoto(file){
@@ -943,18 +1113,40 @@ V.profile=()=>{
      <input type="checkbox" id="admin_notifyToggle">
      <span>${tr('adminNotifyToggle')}</span>
     </label>
+    <div style="font-size:12px;color:var(--mu);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 8px">${tr('adminBannersTitle')}</div>
+    <div id="adminBannersBlock"><div class="empty">${tr('wxLoading')}</div></div>
     <div style="font-size:12px;color:var(--mu);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 8px">${tr('adminUsersTitle')}</div>
     <div id="adminUsersList"><div class="empty">${tr('wxLoading')}</div></div>
    </div>`:''}
+  </div>
+  <div class="card" style="max-width:480px;margin-top:16px">
+   <h3 style="margin:0 0 10px">${tr('cartTitle')}</h3>
+   <div id="cartList"><div class="empty">${tr('wxLoading')}</div></div>
   </div>`;
+ renderCartList();
  if(isAdmin()){
-  getAppSettings().then(s=>{const cb=$('#admin_notifyToggle');if(cb)cb.checked=!!s.notifyOnRegister});
+  getAppSettings().then(s=>{
+   const cb=$('#admin_notifyToggle');if(cb)cb.checked=!!s.notifyOnRegister;
+   const bb=$('#adminBannersBlock');
+   if(bb){
+    bb.innerHTML=adminBannerFormHtml('left',s.bannerLeftOverride)+adminBannerFormHtml('right',s.bannerRightOverride);
+    ['left','right'].forEach(side=>{
+     const sv=$('#ab_'+side+'_save'),cl=$('#ab_'+side+'_clear');
+     if(sv)sv.onclick=()=>adminSaveBannerOverride(side);
+     if(cl)cl.onclick=()=>adminClearBannerOverride(side);
+    });
+   }
+  });
   const cb=$('#admin_notifyToggle');
   if(cb)cb.onchange=()=>setAppSetting('notifyOnRegister',cb.checked);
   adminLoadUsers().then(users=>{
    const el=$('#adminUsersList');if(!el)return;
    if(!users.length){el.innerHTML=`<div class="empty">${tr('forumEmpty')}</div>`;return}
    el.innerHTML=users.map(adminUserRowHtml).join('');
+   el.querySelectorAll('.adminDelUserBtn').forEach(b=>b.onclick=async()=>{
+    if(!confirm(tr('confirmDeleteUser')))return;
+    try{await fbDb.collection('users').doc(b.dataset.uid).delete();const row=b.closest('[data-uidrow]');if(row)row.remove()}catch(e){}
+   });
   });
  }
  $('#pf_photoBtn').onclick=()=>$('#pf_photo').click();
@@ -1019,17 +1211,52 @@ function setNavMoreOpen(open){
 }
 window.addEventListener('resize',()=>positionNavMoreMenu());
 window.addEventListener('scroll',()=>positionNavMoreMenu(),true);
-function go(k){
- history.replaceState(null,'','#'+k);
+function navState(hash,opts){
+ if(opts&&opts.skipPush)return;
+ const cur=location.hash.slice(1);
+ if(!(opts&&opts.replaceOnly)&&cur!==hash)history.pushState({h:hash},'','#'+hash);
+ else history.replaceState({h:hash},'','#'+hash);
+}
+function setNavActive(k){
  document.querySelectorAll('#nav>button[data-k]').forEach(b=>b.classList.toggle('on',b.dataset.k===k));
  document.querySelectorAll('#navMoreMenu button[data-k]').forEach(b=>b.classList.toggle('on',b.dataset.k===k));
  const hiddenActive=[...document.querySelectorAll('#navMoreMenu button[data-k]')].some(b=>b.dataset.k===k);
  const mb=$('#navMore');if(mb)mb.classList.toggle('on',hiddenActive);
  setNavMoreOpen(false);
+}
+function go(k,opts){
+ navState(k,opts);
+ setNavActive(k);
  if(MAP){MAP.remove();MAP=null}
  V[k]();
+ toggleSideBanners(k==='forecast');
  window.scrollTo(0,0)
 }
+function refreshCurrentView(){
+ const h=location.hash.slice(1)||'forecast';
+ const parts=h.split('/');
+ const top=parts[0];
+ if(top==='shop'){
+  setNavActive('shop');
+  if(parts[1]==='new')shopShowEditor({skipPush:true});
+  else if(parts[1]==='i'&&parts[2])shopShowItem(parts[2],{skipPush:true});
+  else shopShowList({skipPush:true});
+  toggleSideBanners(false);
+ }else if(top==='forum'){
+  setNavActive('forum');
+  if(parts[1]==='new')forumShowEditor({skipPush:true});
+  else if(parts[1]==='t'&&parts[2])forumShowTopic(parts[2],{skipPush:true});
+  else forumShowList({skipPush:true});
+  toggleSideBanners(false);
+ }else{
+  const k=V[top]?top:'forecast';
+  setNavActive(k);
+  if(MAP){MAP.remove();MAP=null}
+  V[k]();
+  toggleSideBanners(k==='forecast');
+ }
+}
+window.addEventListener('popstate',()=>{refreshCurrentView();window.scrollTo(0,0)});
 function layoutNav(){
  const nav=$('#nav'),more=$('#navMore'),menu=$('#navMoreMenu');
  if(!nav||!more||!menu)return;
@@ -1271,6 +1498,26 @@ adminSectionTitle:{ka:'ადმინის პარამეტრები',
 adminNotifyToggle:{ka:'მეილის გაგზავნა ახალი რეგისტრაციისას',en:'Email me on new registrations',ru:'Письмо при новой регистрации'},
 adminUsersTitle:{ka:'რეგისტრირებული მომხმარებლები',en:'Registered users',ru:'Зарегистрированные пользователи'},
 adminRegistered:{ka:'რეგისტრირდა',en:'Registered',ru:'Зарегистрирован'},
+adminDeleteUser:{ka:'წაშლა',en:'Delete',ru:'Удалить'},
+confirmDeleteUser:{ka:'წავშალო ეს მომხმარებელი საიტიდან? (მხოლოდ მისი პროფილი და აქტივობა წაშლილია, Google/მეილ-პაროლის შესვლა არ ქრება)',en:'Remove this user from the site? (only their profile/activity is deleted, their login itself still exists)',ru:'Удалить этого пользователя с сайта? (удаляется только профиль/активность, сам логин остаётся)'},
+confirmDelete:{ka:'დარწმუნებული ხარ, რომ წავშალო?',en:'Are you sure you want to delete this?',ru:'Вы уверены, что хотите удалить?'},
+adminBannersTitle:{ka:'საარეკლამო ბანერები',en:'Ad banners',ru:'Рекламные баннеры'},
+adminBannerLeft:{ka:'მარცხენა ბანერი',en:'Left banner',ru:'Левый баннер'},
+adminBannerRight:{ka:'მარჯვენა ბანერი',en:'Right banner',ru:'Правый баннер'},
+bannerEnable:{ka:'ჩემი განცხადება (გამორთვისას — ავტომატურად ყველაზე ნანახი ნივთი)',en:'My own announcement (off = auto most-viewed item)',ru:'Моё объявление (выкл. = авто самый просматриваемый товар)'},
+bannerTitlePlaceholder:{ka:'ბანერის სათაური',en:'Banner title',ru:'Заголовок баннера'},
+bannerLinkPlaceholder:{ka:'ლინკი (არასავალდებულო)',en:'Link (optional)',ru:'Ссылка (необязательно)'},
+bannerImageLabel:{ka:'ბანერის ფოტო',en:'Banner photo',ru:'Фото баннера'},
+bannerSave:{ka:'შენახვა',en:'Save',ru:'Сохранить'},
+bannerClear:{ka:'გასუფთავება',en:'Clear',ru:'Сбросить'},
+forumDeleteTopic:{ka:'თემის წაშლა',en:'Delete topic',ru:'Удалить тему'},
+forumDeleteComment:{ka:'წაშლა',en:'Delete',ru:'Удалить'},
+shopDeleteItem:{ka:'განცხადების წაშლა',en:'Delete listing',ru:'Удалить объявление'},
+shopViews:{ka:'ნახვები',en:'Views',ru:'Просмотры'},
+cartAdd:{ka:'კალათაში დამატება',en:'Add to cart',ru:'В корзину'},
+cartRemove:{ka:'კალათიდან მოშორება',en:'Remove from cart',ru:'Убрать из корзины'},
+cartTitle:{ka:'ჩემი კალათა',en:'My cart',ru:'Моя корзина'},
+cartEmpty:{ka:'კალათა ცარიელია',en:'Your cart is empty',ru:'Корзина пуста'},
 hShop:{ka:'მაღაზია',en:'Shop',ru:'Магазин'},
 shopAddItem:{ka:'ნივთის დამატება',en:'Add item',ru:'Добавить товар'},
 shopTitlePlaceholder:{ka:'სათაური (მაგ. სარეველა ჩანგალი)',en:'Title (e.g. fishing rod)',ru:'Заголовок (напр. удочка)'},
@@ -1291,7 +1538,7 @@ function authErrMsg(code){
  return tr(m[code]||'authErrGeneric');
 }
 /* ===== პროფილი / ონლაინ სტატუსი ===== */
-let CUR_PROFILE={displayName:'',photoURL:''};
+let CUR_PROFILE={displayName:'',photoURL:'',cart:[]};
 const PRESENCE_CACHE={};
 const PRESENCE_TTL=60000;
 const PRESENCE_ONLINE_WINDOW=90000;
@@ -1335,14 +1582,14 @@ function startPresence(){
 }
 function stopPresence(){if(presenceTimer){clearInterval(presenceTimer);presenceTimer=null}}
 async function loadCurProfile(){
- if(!CUR_USER||!fbDb){CUR_PROFILE={displayName:'',photoURL:''};return}
+ if(!CUR_USER||!fbDb){CUR_PROFILE={displayName:'',photoURL:'',cart:[]};return}
  try{
   const ref=fbDb.collection('users').doc(CUR_USER.uid);
   const snap=await ref.get();
   const d=snap.exists?snap.data():{};
-  CUR_PROFILE={displayName:d.displayName||CUR_USER.displayName||'',photoURL:d.photoURL||CUR_USER.photoURL||''};
+  CUR_PROFILE={displayName:d.displayName||CUR_USER.displayName||'',photoURL:d.photoURL||CUR_USER.photoURL||'',cart:d.cart||[]};
   if(!d.createdAt)ref.set({createdAt:Date.now()},{merge:true}).catch(()=>{});
- }catch(e){CUR_PROFILE={displayName:CUR_USER.displayName||'',photoURL:CUR_USER.photoURL||''}}
+ }catch(e){CUR_PROFILE={displayName:CUR_USER.displayName||'',photoURL:CUR_USER.photoURL||'',cart:[]}}
  renderAuthBox();
 }
 function isAdmin(){return !!(CUR_USER&&CUR_USER.email&&ADMIN_EMAILS.includes(CUR_USER.email.toLowerCase()));}
@@ -1369,7 +1616,26 @@ async function adminLoadUsers(){
 function adminUserRowHtml(u){
  const online=!!(u.lastActive&&Date.now()-u.lastActive<PRESENCE_ONLINE_WINDOW);
  const meta={displayName:u.displayName,photoURL:u.photoURL,online};
- return `<div class="fiTop" style="padding:8px 0;border-bottom:1px solid var(--ln)">${avatarDotHtml(meta,30)}<div class="fiMeta"><b>${esc(u.displayName||u.email||u.uid)}</b><small>${esc(u.email||'')}${u.createdAt?' · '+tr('adminRegistered')+': '+fmtDate(u.createdAt):''}</small></div></div>`;
+ const isSelf=CUR_USER&&u.uid===CUR_USER.uid;
+ return `<div class="fiTop" style="padding:8px 0;border-bottom:1px solid var(--ln)" data-uidrow="${u.uid}">${avatarDotHtml(meta,30)}<div class="fiMeta"><b>${esc(u.displayName||u.email||u.uid)}</b><small>${esc(u.email||'')}${u.createdAt?' · '+tr('adminRegistered')+': '+fmtDate(u.createdAt):''}</small></div>${isSelf?'':`<button type="button" class="authlink adminDelUserBtn" data-uid="${u.uid}" style="margin-left:auto">${tr('adminDeleteUser')}</button>`}</div>`;
+}
+async function renderCartList(){
+ const el=$('#cartList');if(!el)return;
+ const ids=CUR_PROFILE.cart||[];
+ if(!ids.length){el.innerHTML=`<div class="empty">${tr('cartEmpty')}</div>`;return}
+ if(!shopCol()){el.innerHTML=`<div class="empty">${tr('wxError')}</div>`;return}
+ try{
+  const docs=await Promise.all(ids.map(id=>shopCol().doc(id).get().catch(()=>null)));
+  const items=docs.filter(d=>d&&d.exists).map(d=>({id:d.id,...d.data()}));
+  if(!items.length){el.innerHTML=`<div class="empty">${tr('cartEmpty')}</div>`;return}
+  el.innerHTML=items.map(it=>`<div class="fiTop" style="padding:8px 0;border-bottom:1px solid var(--ln)" data-cartrow="${it.id}">
+    <span class="shopThumb" style="width:50px;height:50px;border-radius:8px;flex:none">${it.photoURL?`<img src="${it.photoURL}" alt="">`:'🎣'}</span>
+    <div class="fiMeta" style="cursor:pointer" data-open="${it.id}"><b>${esc(it.title)}</b><small>${fmtShopPrice(it.price)}</small></div>
+    <button type="button" class="authlink cartRemoveBtn" data-id="${it.id}" style="margin-left:auto">${tr('cartRemove')}</button>
+   </div>`).join('');
+  el.querySelectorAll('[data-open]').forEach(d=>d.onclick=()=>{go('shop');shopShowItem(d.dataset.open)});
+  el.querySelectorAll('.cartRemoveBtn').forEach(b=>b.onclick=async()=>{await toggleCart(b.dataset.id);renderCartList()});
+ }catch(e){el.innerHTML=`<div class="empty">${tr('wxError')}</div>`}
 }
 async function notifyAdminOfRegistration(user){
  if(!user)return;
@@ -1682,18 +1948,21 @@ function setLang(l){
  renderNav();
  renderAuthBox();
  if(!document.getElementById('authgate').hidden){renderGateContent();renderWeatherWidget()}
- go(V[location.hash.slice(1)]?location.hash.slice(1):'forecast');
+ refreshCurrentView();
 }
 document.querySelectorAll('#langsw button').forEach(b=>b.classList.toggle('on',b.dataset.l===LANG));
 $('#langsw').addEventListener('click',e=>{const b=e.target.closest('button[data-l]');if(b)setLang(b.dataset.l)});
 renderNav();
 renderAuthBox();
 let AUTH_RESOLVED=false;
+let WAS_SIGNED_IN=false;
 if(fbAuth){
  fbAuth.onAuthStateChanged(async u=>{
   AUTH_RESOLVED=true;CUR_USER=u;
-  if(u){await loadCurProfile();startPresence()}else{stopPresence();CUR_PROFILE={displayName:'',photoURL:''}}
+  const justSignedIn=!!u&&!WAS_SIGNED_IN;WAS_SIGNED_IN=!!u;
+  if(u){await loadCurProfile();startPresence()}else{stopPresence();CUR_PROFILE={displayName:'',photoURL:'',cart:[]}}
   renderAuthBox();updateGateVisibility();
+  if(justSignedIn)go('forecast');
  });
  setTimeout(()=>{if(!AUTH_RESOLVED){AUTH_RESOLVED=true;updateGateVisibility()}},4000);
 }else updateGateVisibility();
@@ -1708,7 +1977,7 @@ document.addEventListener('click',e=>{if(!e.target.closest('.bar'))setNavMoreOpe
 let navRt;window.addEventListener('resize',()=>{clearTimeout(navRt);navRt=setTimeout(layoutNav,120)});
 document.querySelector('.logo').onclick=()=>go('forecast');
 requestAnimationFrame(layoutNav);
-(async()=>{try{const r=await fetch('fish-data.json?'+Date.now(),{cache:'no-store'});if(r.ok)SHARED=await r.json()}catch{}applyEdits();go(V[location.hash.slice(1)]?location.hash.slice(1):'forecast');requestAnimationFrame(layoutNav)})();
+(async()=>{try{const r=await fetch('fish-data.json?'+Date.now(),{cache:'no-store'});if(r.ok)SHARED=await r.json()}catch{}applyEdits();go('forecast',{replaceOnly:true});requestAnimationFrame(layoutNav)})();
 </script>
 </body>
 </html>
