@@ -84,6 +84,11 @@ body.gated #app,body.gated header{visibility:hidden}
 .forumList{display:flex;flex-direction:column;gap:8px}
 .forumItem{display:block;width:100%;text-align:left;background:var(--s1);border:1px solid var(--ln);border-radius:var(--rad);padding:12px 14px;font:inherit;color:var(--tx);cursor:pointer}
 .forumItem:hover{background:var(--s2)}
+.shopCard{padding:0;cursor:pointer;overflow:hidden}
+.shopCard:hover{border-color:var(--mu)}
+.shopThumb{aspect-ratio:4/3;background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:40px;overflow:hidden}
+.shopThumb img{width:100%;height:100%;object-fit:cover;display:block}
+.shopCardBody{padding:12px}
 .profAv{width:72px;height:72px;border-radius:50%;background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;overflow:hidden;flex:none}
 .profAv img{width:100%;height:100%;object-fit:cover}
 .profileMenu{position:fixed;background:var(--s1);border:1px solid var(--ln);border-radius:12px;padding:6px;display:flex;flex-direction:column;gap:2px;min-width:160px;box-shadow:0 10px 28px #0007;z-index:9000}
@@ -337,8 +342,8 @@ function buildLocs(){
  });
 }
 let LOCS=buildLocs();
-const TABS=[['where','სად გირჩევ წასვლას'],['map','რუკა'],['locs','სათევზაო ლოკაციები'],['fish','თევზები'],['moon','მთვარე'],['mine','რჩეული ადგილები'],['forum','ფორუმი']];
-const TABS_I18N={where:{en:'Where to go',ru:'Куда поехать'},map:{en:'Map',ru:'Карта'},locs:{en:'Locations',ru:'Локации'},fish:{en:'Fish',ru:'Рыбы'},moon:{en:'Moon',ru:'Луна'},mine:{en:'Favorites',ru:'Избранное'},forum:{en:'Forum',ru:'Форум'}};
+const TABS=[['where','სად გირჩევ წასვლას'],['map','რუკა'],['locs','სათევზაო ლოკაციები'],['fish','თევზები'],['moon','მთვარე'],['mine','რჩეული ადგილები'],['forum','ფორუმი'],['shop','მაღაზია']];
+const TABS_I18N={where:{en:'Where to go',ru:'Куда поехать'},map:{en:'Map',ru:'Карта'},locs:{en:'Locations',ru:'Локации'},fish:{en:'Fish',ru:'Рыбы'},moon:{en:'Moon',ru:'Луна'},mine:{en:'Favorites',ru:'Избранное'},forum:{en:'Forum',ru:'Форум'},shop:{en:'Shop',ru:'Магазин'}};
 function tabLabel(k){if(LANG==='ka')return(TABS.find(t=>t[0]===k)||[])[1]||'';return(TABS_I18N[k]&&TABS_I18N[k][LANG])||(TABS.find(t=>t[0]===k)||[])[1]||''}
 
 /* ===== დამხმარე ===== */
@@ -766,6 +771,110 @@ function forumShowEditor(){
 }
 V.forum=()=>forumShowList();
 
+/* ===== მაღაზია ===== */
+function resizeImageFile(file,maxDim,quality){
+ return new Promise((resolve,reject)=>{
+  const reader=new FileReader();
+  reader.onload=()=>{
+   const img=new Image();
+   img.onload=()=>{
+    let w=img.width,h=img.height;
+    if(w>h){if(w>maxDim){h=Math.round(h*maxDim/w);w=maxDim}}
+    else{if(h>maxDim){w=Math.round(w*maxDim/h);h=maxDim}}
+    const canvas=document.createElement('canvas');
+    canvas.width=w;canvas.height=h;
+    canvas.getContext('2d').drawImage(img,0,0,w,h);
+    resolve(canvas.toDataURL('image/jpeg',quality));
+   };
+   img.onerror=reject;
+   img.src=reader.result;
+  };
+  reader.onerror=reject;
+  reader.readAsDataURL(file);
+ });
+}
+function shopCol(){return fbDb&&fbDb.collection('shopItems')}
+async function shopShowList(){
+ const app=$('#app');
+ app.innerHTML=`<h1>${tr('hShop')}</h1><div style="margin-bottom:12px"><button class="btn" id="shopNewBtn">+ ${tr('shopAddItem')}</button></div><div id="shopGrid" class="grid"><div class="empty">${tr('wxLoading')}</div></div>`;
+ $('#shopNewBtn').onclick=()=>shopShowEditor();
+ if(!shopCol()){$('#shopGrid').innerHTML=`<div class="empty">${tr('wxError')}</div>`;return}
+ try{
+  const snap=await shopCol().orderBy('createdAt','desc').limit(100).get();
+  const items=snap.docs.map(d=>({id:d.id,...d.data()}));
+  await loadMetas(items.map(it=>it.authorUid));
+  const grid=$('#shopGrid');if(!grid)return;
+  if(!items.length){grid.innerHTML=`<div class="empty">${tr('shopEmpty')}</div>`;return}
+  grid.innerHTML=items.map(it=>{
+   const meta=cachedMeta(it.authorUid)||{displayName:it.authorName,photoURL:it.authorPhoto,online:false};
+   return `<div class="card shopCard" data-id="${it.id}">
+    <div class="shopThumb">${it.photoURL?`<img src="${it.photoURL}" alt="">`:'🎣'}</div>
+    <div class="shopCardBody">
+     <h3 style="margin:0 0 2px;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.title)}</h3>
+     ${it.subtitle?`<div class="mu" style="font-size:13px;margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.subtitle)}</div>`:''}
+     <div class="fiTop">${avatarDotHtml(meta,20)}<small style="color:var(--mu)">${esc(meta.displayName||it.authorName||'')}</small></div>
+    </div>
+   </div>`;
+  }).join('');
+  grid.querySelectorAll('.shopCard').forEach(c=>c.onclick=()=>shopShowItem(c.dataset.id));
+ }catch(e){$('#shopGrid').innerHTML=`<div class="empty">${tr('wxError')}</div>`}
+}
+async function shopShowItem(id){
+ const app=$('#app');
+ app.innerHTML=`<button type="button" class="authlink" id="shopBack">← ${tr('forumBack')}</button><div id="shopItemBody"><div class="empty">${tr('wxLoading')}</div></div>`;
+ $('#shopBack').onclick=()=>shopShowList();
+ if(!shopCol())return;
+ try{
+  const doc=await shopCol().doc(id).get();
+  if(!doc.exists){$('#shopItemBody').innerHTML=`<div class="empty">${tr('shopEmpty')}</div>`;return}
+  const it={id:doc.id,...doc.data()};
+  await loadMetas([it.authorUid]);
+  const meta=cachedMeta(it.authorUid)||{displayName:it.authorName,photoURL:it.authorPhoto,online:false};
+  const body=$('#shopItemBody');if(!body)return;
+  body.innerHTML=`<div class="card" style="max-width:560px">
+   ${it.photoURL?`<img src="${it.photoURL}" alt="" style="width:100%;border-radius:10px;margin-bottom:14px;display:block">`:''}
+   <h1 style="margin:0 0 4px">${esc(it.title)}</h1>
+   ${it.subtitle?`<div class="mu" style="margin-bottom:10px">${esc(it.subtitle)}</div>`:''}
+   <p style="white-space:pre-wrap;margin-bottom:14px">${esc(it.description)}</p>
+   <div class="card" style="background:var(--s2);margin-bottom:14px"><b>${tr('shopContactLabel')}:</b> ${esc(it.contact)}</div>
+   <div class="fiTop">${avatarDotHtml(meta,28)}<div class="fiMeta"><small>${tr('shopPostedBy')}: ${esc(meta.displayName||it.authorName||'')} · ${fmtDate(it.createdAt)}</small></div></div>
+  </div>`;
+ }catch(e){const b=$('#shopItemBody');if(b)b.innerHTML=`<div class="empty">${tr('wxError')}</div>`}
+}
+function shopShowEditor(){
+ const app=$('#app');
+ app.innerHTML=`<button type="button" class="authlink" id="shopBack">← ${tr('forumBack')}</button>
+  <h1>${tr('shopAddItem')}</h1>
+  <form id="shopNewForm" class="authform" style="max-width:480px">
+   <input type="text" id="sh_title" placeholder="${tr('shopTitlePlaceholder')}" required maxlength="100">
+   <input type="text" id="sh_subtitle" placeholder="${tr('shopSubtitlePlaceholder')}" maxlength="100">
+   <textarea id="sh_desc" placeholder="${tr('shopDescPlaceholder')}" required rows="5" style="width:100%;resize:vertical;font:inherit;background:var(--s1);color:var(--tx);border:1px solid var(--ln);border-radius:10px;padding:10px;margin-bottom:10px"></textarea>
+   <input type="text" id="sh_contact" placeholder="${tr('shopContactPlaceholder')}" required maxlength="100">
+   <label style="display:block;font-size:12px;color:var(--mu);margin:4px 0">${tr('shopPhotoLabel')}</label>
+   <input type="file" id="sh_photo" accept="image/*" style="margin-bottom:10px">
+   <div class="err" id="sh_err" hidden></div>
+   <button type="submit" class="btn pbtn">${tr('shopPublish')}</button>
+  </form>`;
+ $('#shopBack').onclick=()=>shopShowList();
+ $('#shopNewForm').onsubmit=async e=>{
+  e.preventDefault();
+  const err=$('#sh_err');err.hidden=true;
+  const title=$('#sh_title').value.trim(),subtitle=$('#sh_subtitle').value.trim(),desc=$('#sh_desc').value.trim(),contact=$('#sh_contact').value.trim();
+  if(!title||!desc||!contact)return;
+  if(!CUR_USER||!shopCol()){err.textContent=tr('authErrGeneric');err.hidden=false;return}
+  try{
+   let photoURL='';
+   const file=$('#sh_photo').files&&$('#sh_photo').files[0];
+   if(file)photoURL=await resizeImageFile(file,900,0.78);
+   const nm=CUR_PROFILE.displayName||CUR_USER.displayName||CUR_USER.email||'';
+   const avphoto=CUR_PROFILE.photoURL||CUR_USER.photoURL||'';
+   const ref=await shopCol().add({title,subtitle,description:desc,contact,photoURL,authorUid:CUR_USER.uid,authorName:nm,authorPhoto:avphoto,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+   shopShowItem(ref.id);
+  }catch(ex){err.textContent=tr('authErrGeneric');err.hidden=false}
+ };
+}
+V.shop=()=>shopShowList();
+
 /* ===== პროფილის გვერდი ===== */
 function profileHandlePhoto(file){
  if(!file)return;
@@ -883,7 +992,8 @@ const NAV_ICONS={
  fish:'<svg class="nic" viewBox="0 0 20 20" aria-hidden="true"><g fill="currentColor"><ellipse cx="11" cy="10" rx="7" ry="4"/><path class="ni-tail" d="M4 10 L0 6 L0 14 Z"/><circle cx="15" cy="9" r="1" fill="var(--bg)"/></g></svg>',
  moon:'<svg class="nic" viewBox="0 0 20 20" aria-hidden="true"><g class="ni-glow"><path d="M15 2a8 8 0 1 0 0 16 9.5 9.5 0 0 1 0-16z" fill="#ffe9a8"/></g></svg>',
  mine:'<svg class="nic" viewBox="0 0 20 20" aria-hidden="true"><path class="ni-star" d="M10 1.5l2.4 5.3 5.6.6-4.2 3.9 1.2 5.6L10 14.2l-5 2.7 1.2-5.6-4.2-3.9 5.6-.6z" fill="#f0c419"/></svg>',
- forum:'<svg class="nic" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 4h16v9H8l-4 4v-4H2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>'
+ forum:'<svg class="nic" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 4h16v9H8l-4 4v-4H2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+ shop:'<svg class="nic" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 7h12l-1 10H5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>'
 };
 
 /* ===== ნავიგაცია ===== */
@@ -1156,6 +1266,17 @@ adminSectionTitle:{ka:'ადმინის პარამეტრები',
 adminNotifyToggle:{ka:'მეილის გაგზავნა ახალი რეგისტრაციისას',en:'Email me on new registrations',ru:'Письмо при новой регистрации'},
 adminUsersTitle:{ka:'რეგისტრირებული მომხმარებლები',en:'Registered users',ru:'Зарегистрированные пользователи'},
 adminRegistered:{ka:'რეგისტრირდა',en:'Registered',ru:'Зарегистрирован'},
+hShop:{ka:'მაღაზია',en:'Shop',ru:'Магазин'},
+shopAddItem:{ka:'ნივთის დამატება',en:'Add item',ru:'Добавить товар'},
+shopTitlePlaceholder:{ka:'სათაური (მაგ. სარეველა ჩანგალი)',en:'Title (e.g. fishing rod)',ru:'Заголовок (напр. удочка)'},
+shopSubtitlePlaceholder:{ka:'ქვესათაური / ფასი (არასავალდებულო)',en:'Subtitle / price (optional)',ru:'Подзаголовок / цена (необязательно)'},
+shopDescPlaceholder:{ka:'აღწერილობა — მდგომარეობა, ზომა, დეტალები...',en:'Description — condition, size, details...',ru:'Описание — состояние, размер, детали...'},
+shopContactPlaceholder:{ka:'საკონტაქტო ინფორმაცია (ტელეფონი/სხვა)',en:'Contact info (phone/other)',ru:'Контактная информация (телефон/др.)'},
+shopPhotoLabel:{ka:'ფოტო (არასავალდებულო)',en:'Photo (optional)',ru:'Фото (необязательно)'},
+shopPublish:{ka:'გამოქვეყნება',en:'Publish',ru:'Опубликовать'},
+shopEmpty:{ka:'ნივთები ჯერ არ არის',en:'No items yet',ru:'Пока нет товаров'},
+shopContactLabel:{ka:'საკონტაქტო ინფორმაცია',en:'Contact',ru:'Контакт'},
+shopPostedBy:{ka:'გამომქვეყნებელი',en:'Posted by',ru:'Опубликовал'},
 };
 function tr(k){return (UI[k]&&(UI[k][LANG]||UI[k].ka))||''}
 function authErrMsg(code){
