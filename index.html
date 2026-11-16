@@ -104,6 +104,10 @@ body.gated #app,body.gated header{visibility:hidden}
 #bannerColLeft{left:20px}
 #bannerColRight{right:20px}
 @media (min-width:1480px){.bannerCol.show{display:flex}}
+.bannerMobileStrip{display:none;gap:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:1100px;margin:0 auto;padding:14px 16px 2px}
+.bannerMobileStrip.show{display:flex}
+@media(min-width:1480px){.bannerMobileStrip.show{display:none}}
+.bannerMobileStrip .sideBanner{width:140px}
 .sideBanner{width:160px;background:var(--s1);border:1px solid var(--ln);border-radius:12px;padding:10px;box-shadow:0 2px 10px rgba(0,0,0,.15);cursor:pointer;overflow:hidden;flex:none}
 .sideBanner.placeholder{cursor:default;display:flex;align-items:center;justify-content:center;min-height:90px;color:var(--mu);font-size:12px;text-align:center;border-style:dashed;opacity:.55}
 .sideBanner img{width:100%;border-radius:8px;display:block;margin-bottom:8px;aspect-ratio:4/3;object-fit:cover}
@@ -329,6 +333,7 @@ nav button,.navMoreMenu button{display:inline-flex;align-items:center;gap:6px}
 <div class="agformPane"><div class="agbox" id="agbox"><div class="agspinwrap"><div class="agspin"></div></div></div></div>
 </div>
 <div class="bannerCol" id="bannerColLeft"></div>
+<div class="bannerMobileStrip" id="bannerMobileStrip"></div>
 <main id="app"></main>
 <div class="bannerCol" id="bannerColRight"></div>
 <div class="chatBtn" id="chatBtn" hidden>💬<span class="chatBadge" id="chatBtnBadge" hidden>0</span></div>
@@ -1031,7 +1036,7 @@ function shopRouteFromBanner(id){
  toggleSideBanners(false);
 }
 async function renderSideBanners(gen){
- const colL=$('#bannerColLeft'),colR=$('#bannerColRight');if(!colL||!colR)return;
+ const colL=$('#bannerColLeft'),colR=$('#bannerColRight'),strip=$('#bannerMobileStrip');if(!colL||!colR)return;
  const data=await loadBannerData();
  if(gen!==BANNER_GEN)return;
  const pickIds=[...new Set(data.slots.filter(s=>s.mode==='pick'&&s.itemId).map(s=>s.itemId))];
@@ -1044,41 +1049,50 @@ async function renderSideBanners(gen){
  if(gen!==BANNER_GEN)return;
  const usedIds=new Set(pickIds);
  const autoPool=data.rankedItems.filter(it=>!usedIds.has(it.id));
- let autoIdx=0;
- function buildSlotEl(slot){
-  const el=document.createElement('div');
-  el.className='sideBanner';
-  if(slot.mode==='custom'&&slot.title){
-   el.innerHTML=`${slot.imageURL?`<img src="${slot.imageURL}" alt="">`:''}<div class="sbTitle">${esc(slot.title)}</div>`;
-   if(slot.link)el.onclick=()=>window.open(slot.link,'_blank');
+ function makeBuildSlotEl(){
+  let autoIdx=0;
+  return function buildSlotEl(slot){
+   const el=document.createElement('div');
+   el.className='sideBanner';
+   if(slot.mode==='custom'&&slot.title){
+    el.innerHTML=`${slot.imageURL?`<img src="${slot.imageURL}" alt="">`:''}<div class="sbTitle">${esc(slot.title)}</div>`;
+    if(slot.link)el.onclick=()=>window.open(slot.link,'_blank');
+    return el;
+   }
+   if(slot.mode==='pick'&&slot.itemId&&pickMap[slot.itemId]){
+    const it=pickMap[slot.itemId];
+    el.innerHTML=`${it.photoURL?`<img src="${it.photoURL}" alt="">`:''}<div class="sbTitle">${esc(it.title)}</div><div class="sbSub">${fmtShopPrice(it.price)}</div>`;
+    el.onclick=()=>shopRouteFromBanner(it.id);
+    return el;
+   }
+   const it=autoPool[autoIdx];
+   if(it){
+    autoIdx++;
+    el.innerHTML=`${it.photoURL?`<img src="${it.photoURL}" alt="">`:''}<div class="sbTitle">${esc(it.title)}</div><div class="sbSub">${fmtShopPrice(it.price)}</div>`;
+    el.onclick=()=>shopRouteFromBanner(it.id);
+    return el;
+   }
+   el.classList.add('placeholder');
+   el.textContent=tr('bannerPlaceholder');
    return el;
-  }
-  if(slot.mode==='pick'&&slot.itemId&&pickMap[slot.itemId]){
-   const it=pickMap[slot.itemId];
-   el.innerHTML=`${it.photoURL?`<img src="${it.photoURL}" alt="">`:''}<div class="sbTitle">${esc(it.title)}</div><div class="sbSub">${fmtShopPrice(it.price)}</div>`;
-   el.onclick=()=>shopRouteFromBanner(it.id);
-   return el;
-  }
-  const it=autoPool[autoIdx];
-  if(it){
-   autoIdx++;
-   el.innerHTML=`${it.photoURL?`<img src="${it.photoURL}" alt="">`:''}<div class="sbTitle">${esc(it.title)}</div><div class="sbSub">${fmtShopPrice(it.price)}</div>`;
-   el.onclick=()=>shopRouteFromBanner(it.id);
-   return el;
-  }
-  el.classList.add('placeholder');
-  el.textContent=tr('bannerPlaceholder');
-  return el;
+  };
  }
+ const buildForCols=makeBuildSlotEl();
  colL.innerHTML='';colR.innerHTML='';
- for(let i=0;i<BANNER_SLOTS_PER_SIDE;i++)colL.appendChild(buildSlotEl(data.slots[i]));
- for(let i=0;i<BANNER_SLOTS_PER_SIDE;i++)colR.appendChild(buildSlotEl(data.slots[BANNER_SLOTS_PER_SIDE+i]));
+ for(let i=0;i<BANNER_SLOTS_PER_SIDE;i++)colL.appendChild(buildForCols(data.slots[i]));
+ for(let i=0;i<BANNER_SLOTS_PER_SIDE;i++)colR.appendChild(buildForCols(data.slots[BANNER_SLOTS_PER_SIDE+i]));
  colL.classList.add('show');colR.classList.add('show');
+ if(strip){
+  const buildForStrip=makeBuildSlotEl();
+  strip.innerHTML='';
+  for(let i=0;i<BANNER_TOTAL;i++)strip.appendChild(buildForStrip(data.slots[i]));
+  strip.classList.add('show');
+ }
 }
 function toggleSideBanners(show){
- const colL=$('#bannerColLeft'),colR=$('#bannerColRight');if(!colL||!colR)return;
+ const colL=$('#bannerColLeft'),colR=$('#bannerColRight'),strip=$('#bannerMobileStrip');if(!colL||!colR)return;
  BANNER_GEN++;
- if(!show){colL.classList.remove('show');colR.classList.remove('show');return}
+ if(!show){colL.classList.remove('show');colR.classList.remove('show');if(strip)strip.classList.remove('show');return}
  renderSideBanners(BANNER_GEN);
 }
 async function adminRenderBannerBlock(){
