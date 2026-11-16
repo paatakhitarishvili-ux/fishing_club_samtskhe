@@ -1066,8 +1066,11 @@ document.querySelectorAll('#langsw button').forEach(b=>b.classList.toggle('on',b
 $('#langsw').addEventListener('click',e=>{const b=e.target.closest('button[data-l]');if(b)setLang(b.dataset.l)});
 renderNav();
 renderAuthBox();
-if(fbAuth)fbAuth.onAuthStateChanged(u=>{CUR_USER=u;renderAuthBox();updateGateVisibility()});
-else updateGateVisibility();
+let AUTH_RESOLVED=false;
+if(fbAuth){
+ fbAuth.onAuthStateChanged(u=>{AUTH_RESOLVED=true;CUR_USER=u;renderAuthBox();updateGateVisibility()});
+ setTimeout(()=>{if(!AUTH_RESOLVED){AUTH_RESOLVED=true;updateGateVisibility()}},4000);
+}else updateGateVisibility();
 $('.bar').addEventListener('click',e=>{
  if(e.target.closest('#navMore')){setNavMoreOpen($('#navMoreMenu').hidden);return}
  const mi=e.target.closest('#navMoreMenu button[data-k]');
