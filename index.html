@@ -43,6 +43,7 @@ nav button.on,.navMore.on{background:var(--s2);color:var(--tx)}
 @media(max-width:700px){.userchip span{display:none}}
 body.gated #app,body.gated header{visibility:hidden}
 .authgate{position:fixed;inset:0;z-index:9999;background:linear-gradient(180deg,var(--bg),var(--s1) 85%);display:flex;align-items:stretch;justify-content:center;overflow:hidden}
+.authgate[hidden]{display:none}
 .aglogoPane{flex:1;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;min-width:0}
 .agbglogo{position:relative;z-index:1;width:min(48%,380px);min-width:160px;pointer-events:none;user-select:none;filter:drop-shadow(0 14px 34px rgba(0,0,0,.5))}
 .agfish{position:absolute;pointer-events:none;user-select:none;opacity:.75;animation:agswim linear infinite;z-index:0;will-change:transform}
