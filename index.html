@@ -18,8 +18,9 @@ header{position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px s
 .bar{max-width:1100px;margin:auto;padding:10px 16px;display:flex;gap:14px;align-items:center;position:relative}
 .logo{font-weight:800;white-space:nowrap}
 nav{display:flex;gap:2px;overflow:hidden;flex:1;min-width:0}
-nav button,.navMore{background:none;border:0;color:var(--mu);font:inherit;font-size:14px;padding:7px 9px;border-radius:99px;cursor:pointer;white-space:nowrap}
-nav button.on,.navMore.on{background:var(--s2);color:var(--tx)}
+nav button,.navMore,.navMoreMenu button{background:none;border:0;color:var(--mu);font:inherit;font-size:14px;padding:7px 9px;border-radius:99px;cursor:pointer;white-space:nowrap}
+nav button.on,.navMore.on,.navMoreMenu button.on{background:var(--s2);color:var(--tx)}
+.navMoreMenu button:hover{background:var(--s2);color:var(--tx)}
 .navMore{display:none;align-items:center;gap:6px;flex:none}
 .navMore[data-show]{display:inline-flex}
 .navMoreCaret{flex:none;transition:transform .15s}
