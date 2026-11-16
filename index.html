@@ -762,7 +762,8 @@ async function forumShowList(opts){
 function forumCommentHtml(c,topicId){
  const meta=cachedMeta(c.authorUid)||{displayName:c.authorName,photoURL:c.authorPhoto,online:false};
  const canDelete=CUR_USER&&(isAdmin()||c.authorUid===CUR_USER.uid);
- return `<div class="card" style="margin-bottom:8px" data-cid="${c.id}"><div class="fiTop">${avatarDotHtml(meta,24)}<div class="fiMeta"><b style="font-size:13px">${esc(meta.displayName||c.authorName||'')}</b><small>${fmtDate(c.createdAt)}</small></div>${canDelete?`<button type="button" class="authlink fcDel" data-cid="${c.id}" style="margin-left:auto">${tr('forumDeleteComment')}</button>`:''}</div><p style="margin-top:8px;white-space:pre-wrap">${esc(c.text)}</p></div>`;
+ const canReport=CUR_USER&&c.authorUid!==CUR_USER.uid;
+ return `<div class="card" style="margin-bottom:8px" data-cid="${c.id}"><div class="fiTop">${avatarDotHtml(meta,24)}<div class="fiMeta"><b style="font-size:13px">${esc(meta.displayName||c.authorName||'')}</b><small>${fmtDate(c.createdAt)}</small></div><div style="margin-left:auto;display:flex;gap:8px">${canReport?`<button type="button" class="authlink fcReport" data-cid="${c.id}">${tr('reportBtn')}</button>`:''}${canDelete?`<button type="button" class="authlink fcDel" data-cid="${c.id}">${tr('forumDeleteComment')}</button>`:''}</div></div><p style="margin-top:8px;white-space:pre-wrap">${esc(c.text)}</p></div>`;
 }
 async function forumShowTopic(id,opts){
  if(!(opts&&opts.skipPush))navState('forum/t/'+id);
@@ -781,7 +782,8 @@ async function forumShowTopic(id,opts){
   const authorMeta=cachedMeta(t.authorUid)||{displayName:t.authorName,photoURL:t.authorPhoto,online:false};
   const body=$('#forumTopicBody');if(!body)return;
   const canDeleteTopic=CUR_USER&&(isAdmin()||t.authorUid===CUR_USER.uid);
-  body.innerHTML=`<div class="card" style="margin-bottom:14px"><div class="fiTop">${avatarDotHtml(authorMeta,32)}<div class="fiMeta"><b style="font-size:17px">${esc(t.title)}</b><small>${esc(authorMeta.displayName||t.authorName||'')} · ${fmtDate(t.createdAt)}</small></div>${canDeleteTopic?`<button type="button" class="authlink" id="forumDeleteTopicBtn" style="margin-left:auto">${tr('forumDeleteTopic')}</button>`:''}</div><p style="margin-top:12px;white-space:pre-wrap">${esc(t.body)}</p></div>
+  const canReportTopic=CUR_USER&&t.authorUid!==CUR_USER.uid;
+  body.innerHTML=`<div class="card" style="margin-bottom:14px"><div class="fiTop">${avatarDotHtml(authorMeta,32)}<div class="fiMeta"><b style="font-size:17px">${esc(t.title)}</b><small>${esc(authorMeta.displayName||t.authorName||'')} · ${fmtDate(t.createdAt)}</small></div><div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">${canReportTopic?`<button type="button" class="authlink" id="forumReportTopicBtn">${tr('reportBtn')}</button>`:''}${canDeleteTopic?`<button type="button" class="authlink" id="forumDeleteTopicBtn">${tr('forumDeleteTopic')}</button>`:''}</div></div><p style="margin-top:12px;white-space:pre-wrap">${esc(t.body)}</p></div>
    <div id="forumComments">${comments.map(c=>forumCommentHtml(c,id)).join('')||`<div class="empty">${tr('forumNoComments')}</div>`}</div>
    <form id="forumCommentForm" class="authform" style="margin-top:14px">
     <textarea id="fc_text" placeholder="${tr('forumCommentPlaceholder')}" required rows="3" style="width:100%;resize:vertical;font:inherit;background:var(--s1);color:var(--tx);border:1px solid var(--ln);border-radius:10px;padding:10px"></textarea>
@@ -802,6 +804,8 @@ async function forumShowTopic(id,opts){
     forumShowTopic(id,{skipPush:true});
    }catch(ex){err.textContent=tr('authErrGeneric');err.hidden=false}
   };
+  const frtb=$('#forumReportTopicBtn');
+  if(frtb)frtb.onclick=()=>submitReport('forumTopic',t.id,t.authorUid,t.authorName,t.title);
   const dtb=$('#forumDeleteTopicBtn');
   if(dtb)dtb.onclick=async()=>{
    if(!confirm(tr('confirmDelete')))return;
@@ -821,6 +825,10 @@ async function forumShowTopic(id,opts){
     await forumCol().doc(id).update({commentCount:firebase.firestore.FieldValue.increment(-1)});
     forumShowTopic(id,{skipPush:true});
    }catch(e){}
+  });
+  body.querySelectorAll('.fcReport').forEach(b=>b.onclick=()=>{
+   const c=comments.find(x=>x.id===b.dataset.cid);if(!c)return;
+   submitReport('forumComment',c.id,c.authorUid,c.authorName,c.text,id);
   });
  }catch(e){const b=$('#forumTopicBody');if(b)b.innerHTML=`<div class="empty">${tr('wxError')}</div>`}
 }
@@ -940,6 +948,7 @@ async function shopShowItem(id,opts){
   const meta=cachedMeta(it.authorUid)||{displayName:it.authorName,photoURL:it.authorPhoto,online:false};
   const body=$('#shopItemBody');if(!body)return;
   const canDelete=CUR_USER&&(isAdmin()||it.authorUid===CUR_USER.uid);
+  const canReport=CUR_USER&&it.authorUid!==CUR_USER.uid;
   body.innerHTML=`<div class="card" style="max-width:560px">
    ${it.photoURL?`<img src="${it.photoURL}" alt="" style="width:100%;border-radius:10px;margin-bottom:14px;display:block">`:''}
    <h1 style="margin:0 0 4px">${esc(it.title)}</h1>
@@ -951,11 +960,14 @@ async function shopShowItem(id,opts){
    <div class="fiTop" style="margin-bottom:14px">${avatarDotHtml(meta,28)}<div class="fiMeta"><small>${tr('shopPostedBy')}: ${esc(meta.displayName||it.authorName||'')} · ${fmtDate(it.createdAt)}</small></div></div>
    <div style="display:flex;gap:8px;flex-wrap:wrap">
     ${cartBtnHtml(it.id)}
+    ${canReport?`<button type="button" class="btn g" id="shopReportBtn">${tr('reportBtn')}</button>`:''}
     ${canDelete?`<button type="button" class="btn" id="shopDeleteBtn" style="background:#c0392b;color:#fff">${tr('shopDeleteItem')}</button>`:''}
    </div>
   </div>`;
   const cb=body.querySelector('.cartBtn');
   if(cb)cb.onclick=async()=>{await toggleCart(it.id);shopShowItem(it.id,{skipPush:true})};
+  const rb=$('#shopReportBtn');
+  if(rb)rb.onclick=()=>submitReport('shop',it.id,it.authorUid,it.authorName,it.title);
   const db=$('#shopDeleteBtn');
   if(db)db.onclick=async()=>{
    if(!confirm(tr('confirmDelete')))return;
@@ -1219,6 +1231,8 @@ V.profile=()=>{
     </label>
     <div style="font-size:12px;color:var(--mu);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 8px">${tr('adminBannersTitle')}</div>
     <div id="adminBannersBlock"><div class="empty">${tr('wxLoading')}</div></div>
+    <div style="font-size:12px;color:var(--mu);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 8px">${tr('adminReportsTitle')}</div>
+    <div id="adminReportsList"><div class="empty">${tr('wxLoading')}</div></div>
     <div style="font-size:12px;color:var(--mu);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 8px">${tr('adminUsersTitle')}</div>
     <div id="adminUsersList"><div class="empty">${tr('wxLoading')}</div></div>
    </div>`:''}
@@ -1233,15 +1247,8 @@ V.profile=()=>{
   adminRenderBannerBlock();
   const cb=$('#admin_notifyToggle');
   if(cb)cb.onchange=()=>setAppSetting('notifyOnRegister',cb.checked);
-  adminLoadUsers().then(users=>{
-   const el=$('#adminUsersList');if(!el)return;
-   if(!users.length){el.innerHTML=`<div class="empty">${tr('forumEmpty')}</div>`;return}
-   el.innerHTML=users.map(adminUserRowHtml).join('');
-   el.querySelectorAll('.adminDelUserBtn').forEach(b=>b.onclick=async()=>{
-    if(!confirm(tr('confirmDeleteUser')))return;
-    try{await fbDb.collection('users').doc(b.dataset.uid).delete();const row=b.closest('[data-uidrow]');if(row)row.remove()}catch(e){}
-   });
-  });
+  adminRenderUsersBlock();
+  adminRenderReportsBlock();
  }
  $('#pf_photoBtn').onclick=()=>$('#pf_photo').click();
  $('#pf_photo').onchange=e=>profileHandlePhoto(e.target.files&&e.target.files[0]);
@@ -1633,6 +1640,25 @@ chatInboxTitle:{ka:'შეტყობინებები',en:'Messages',ru:'�
 chatPlaceholder:{ka:'დაწერე შეტყობინება...',en:'Write a message...',ru:'Напишите сообщение...'},
 chatSend:{ka:'გაგზავნა',en:'Send',ru:'Отправить'},
 chatEmpty:{ka:'შეტყობინებები ჯერ არ არის',en:'No messages yet',ru:'Пока нет сообщений'},
+reportBtn:{ka:'🚩 პრეტენზია',en:'🚩 Report',ru:'🚩 Жалоба'},
+confirmReport:{ka:'გაგზავნილი იქნება პრეტენზია ადმინისტრატორთან ამ კონტენტის შესახებ. გავაგზავნო?',en:'A report about this content will be sent to the admin. Send it?',ru:'Администратору будет отправлена жалоба на этот контент. Отправить?'},
+reportSent:{ka:'პრეტენზია გაგზავნილია',en:'Report sent',ru:'Жалоба отправлена'},
+cantReportOwn:{ka:'საკუთარ კონტენტზე პრეტენზიის გაგზავნა შეუძლებელია',en:"You can't report your own content",ru:'Нельзя отправить жалобу на собственный контент'},
+accountBlockedMsg:{ka:'თქვენი ანგარიში დაბლოკილია ადმინისტრატორის მიერ',en:'Your account has been blocked by the administrator',ru:'Ваш аккаунт заблокирован администратором'},
+adminReportsTitle:{ka:'პრეტენზიები',en:'Reports',ru:'Жалобы'},
+adminReportsEmpty:{ka:'პრეტენზიები არ არის',en:'No reports',ru:'Жалоб нет'},
+adminReportTypeTopic:{ka:'ფორუმის თემა',en:'Forum topic',ru:'Тема форума'},
+adminReportTypeComment:{ka:'კომენტარი',en:'Comment',ru:'Комментарий'},
+adminReportTypeShop:{ka:'მაღაზიის განცხადება',en:'Shop listing',ru:'Объявление магазина'},
+adminReportedBy:{ka:'საიდან',en:'Reported by',ru:'От кого'},
+adminReportTargetAuthor:{ka:'ავტორი',en:'Author',ru:'Автор'},
+adminReportView:{ka:'ნახვა',en:'View',ru:'Просмотр'},
+adminReportClose:{ka:'დახურვა',en:'Close',ru:'Закрыть'},
+adminBlockedTag:{ka:'დაბლოკილი',en:'Blocked',ru:'Заблокирован'},
+adminBlockUser:{ka:'დაბლოკვა',en:'Block',ru:'Блокировать'},
+adminUnblockUser:{ka:'განბლოკვა',en:'Unblock',ru:'Разблокировать'},
+confirmBlockUser:{ka:'დავბლოკო ეს მომხმარებელი?',en:'Block this user?',ru:'Заблокировать этого пользователя?'},
+confirmUnblockUser:{ka:'განვბლოკო ეს მომხმარებელი?',en:'Unblock this user?',ru:'Разблокировать этого пользователя?'},
 };
 function tr(k){return (UI[k]&&(UI[k][LANG]||UI[k].ka))||''}
 function authErrMsg(code){
@@ -1684,14 +1710,14 @@ function startPresence(){
 }
 function stopPresence(){if(presenceTimer){clearInterval(presenceTimer);presenceTimer=null}}
 async function loadCurProfile(){
- if(!CUR_USER||!fbDb){CUR_PROFILE={displayName:'',photoURL:'',cart:[]};return}
+ if(!CUR_USER||!fbDb){CUR_PROFILE={displayName:'',photoURL:'',cart:[],blocked:false};return}
  try{
   const ref=fbDb.collection('users').doc(CUR_USER.uid);
   const snap=await ref.get();
   const d=snap.exists?snap.data():{};
-  CUR_PROFILE={displayName:d.displayName||CUR_USER.displayName||'',photoURL:d.photoURL||CUR_USER.photoURL||'',cart:d.cart||[]};
+  CUR_PROFILE={displayName:d.displayName||CUR_USER.displayName||'',photoURL:d.photoURL||CUR_USER.photoURL||'',cart:d.cart||[],blocked:!!d.blocked};
   if(!d.createdAt)ref.set({createdAt:Date.now()},{merge:true}).catch(()=>{});
- }catch(e){CUR_PROFILE={displayName:CUR_USER.displayName||'',photoURL:CUR_USER.photoURL||'',cart:[]}}
+ }catch(e){CUR_PROFILE={displayName:CUR_USER.displayName||'',photoURL:CUR_USER.photoURL||'',cart:[],blocked:false}}
  renderAuthBox();
 }
 function isAdmin(){return !!(CUR_USER&&CUR_USER.email&&ADMIN_EMAILS.includes(CUR_USER.email.toLowerCase()));}
@@ -1932,7 +1958,82 @@ function adminUserRowHtml(u){
  const online=!!(u.lastActive&&Date.now()-u.lastActive<PRESENCE_ONLINE_WINDOW);
  const meta={displayName:u.displayName,photoURL:u.photoURL,online};
  const isSelf=CUR_USER&&u.uid===CUR_USER.uid;
- return `<div class="fiTop" style="padding:8px 0;border-bottom:1px solid var(--ln)" data-uidrow="${u.uid}">${avatarDotHtml(meta,30)}<div class="fiMeta"><b>${esc(u.displayName||u.email||u.uid)}</b><small>${esc(u.email||'')}${u.createdAt?' · '+tr('adminRegistered')+': '+fmtDate(u.createdAt):''}</small></div>${isSelf?'':`<button type="button" class="authlink adminDelUserBtn" data-uid="${u.uid}" style="margin-left:auto">${tr('adminDeleteUser')}</button>`}</div>`;
+ const blocked=!!u.blocked;
+ return `<div class="fiTop" style="padding:8px 0;border-bottom:1px solid var(--ln)" data-uidrow="${u.uid}">${avatarDotHtml(meta,30)}<div class="fiMeta"><b>${esc(u.displayName||u.email||u.uid)}${blocked?` <span style="color:var(--r);font-weight:700;font-size:11px">· ${tr('adminBlockedTag')}</span>`:''}</b><small>${esc(u.email||'')}${u.createdAt?' · '+tr('adminRegistered')+': '+fmtDate(u.createdAt):''}</small></div>${isSelf?'':`<div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="authlink adminBlockUserBtn" data-uid="${u.uid}" data-blocked="${blocked?1:0}">${blocked?tr('adminUnblockUser'):tr('adminBlockUser')}</button><button type="button" class="authlink adminDelUserBtn" data-uid="${u.uid}">${tr('adminDeleteUser')}</button></div>`}</div>`;
+}
+async function adminRenderUsersBlock(){
+ const el=$('#adminUsersList');if(!el)return;
+ const users=await adminLoadUsers();
+ if(!users.length){el.innerHTML=`<div class="empty">${tr('forumEmpty')}</div>`;return}
+ el.innerHTML=users.map(adminUserRowHtml).join('');
+ el.querySelectorAll('.adminDelUserBtn').forEach(b=>b.onclick=async()=>{
+  if(!confirm(tr('confirmDeleteUser')))return;
+  try{await fbDb.collection('users').doc(b.dataset.uid).delete();const row=b.closest('[data-uidrow]');if(row)row.remove()}catch(e){}
+ });
+ el.querySelectorAll('.adminBlockUserBtn').forEach(b=>b.onclick=async()=>{
+  const toBlock=b.dataset.blocked==='0';
+  if(!confirm(toBlock?tr('confirmBlockUser'):tr('confirmUnblockUser')))return;
+  try{await fbDb.collection('users').doc(b.dataset.uid).set({blocked:toBlock},{merge:true})}catch(e){}
+  adminRenderUsersBlock();
+ });
+}
+function reportsCol(){return fbDb&&fbDb.collection('reports')}
+async function submitReport(targetType,targetId,targetAuthorUid,targetAuthorName,snippet,topicId){
+ if(!CUR_USER||!reportsCol())return;
+ if(targetAuthorUid&&targetAuthorUid===CUR_USER.uid){alert(tr('cantReportOwn'));return}
+ if(!confirm(tr('confirmReport')))return;
+ try{
+  await reportsCol().add({targetType,targetId,topicId:topicId||null,targetAuthorUid:targetAuthorUid||null,targetAuthorName:targetAuthorName||'',snippet:String(snippet||'').slice(0,200),reporterUid:CUR_USER.uid,reporterName:CUR_PROFILE.displayName||CUR_USER.displayName||CUR_USER.email||'',createdAt:firebase.firestore.FieldValue.serverTimestamp(),status:'open'});
+  alert(tr('reportSent'));
+ }catch(e){alert(tr('authErrGeneric'))}
+}
+async function adminLoadReports(){
+ if(!fbDb||!isAdmin())return[];
+ try{
+  const snap=await fbDb.collection('reports').where('status','==','open').orderBy('createdAt','desc').limit(100).get();
+  return snap.docs.map(d=>({id:d.id,...d.data()}));
+ }catch(e){return[]}
+}
+function adminReportTypeLabel(t){return t==='shop'?tr('hShop'):t==='forumTopic'?tr('adminReportTypeTopic'):tr('adminReportTypeComment')}
+function adminReportRowHtml(r){
+ return `<div class="fiTop" style="padding:8px 0;border-bottom:1px solid var(--ln);align-items:flex-start" data-rid="${r.id}">
+  <div class="fiMeta">
+   <b>${esc(adminReportTypeLabel(r.targetType))}</b><small>${tr('adminReportedBy')}: ${esc(r.reporterName||'')} · ${fmtDate(r.createdAt)}</small>
+   <p class="mu" style="margin:4px 0;font-size:13px;white-space:pre-wrap">${esc(r.snippet||'')}</p>
+   <small>${tr('adminReportTargetAuthor')}: ${esc(r.targetAuthorName||'—')}</small>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+   <button type="button" class="authlink adminReportViewBtn" data-rid="${r.id}">${tr('adminReportView')}</button>
+   ${r.targetAuthorUid?`<button type="button" class="authlink adminReportBlockBtn" data-rid="${r.id}">${tr('adminBlockUser')}</button>`:''}
+   <button type="button" class="authlink adminReportCloseBtn" data-rid="${r.id}">${tr('adminReportClose')}</button>
+  </div>
+ </div>`;
+}
+async function adminRenderReportsBlock(){
+ const el=$('#adminReportsList');if(!el)return;
+ const reports=await adminLoadReports();
+ if(!reports.length){el.innerHTML=`<div class="empty">${tr('adminReportsEmpty')}</div>`;return}
+ el.innerHTML=reports.map(adminReportRowHtml).join('');
+ el.querySelectorAll('.adminReportViewBtn').forEach(b=>b.onclick=()=>{
+  const r=reports.find(x=>x.id===b.dataset.rid);if(!r)return;
+  if(r.targetType==='shop')shopRouteFromBanner(r.targetId);
+  else if(r.targetType==='forumTopic')forumShowTopic(r.targetId);
+  else if(r.targetType==='forumComment'&&r.topicId)forumShowTopic(r.topicId);
+ });
+ el.querySelectorAll('.adminReportCloseBtn').forEach(b=>b.onclick=async()=>{
+  try{await fbDb.collection('reports').doc(b.dataset.rid).set({status:'closed'},{merge:true})}catch(e){}
+  adminRenderReportsBlock();
+ });
+ el.querySelectorAll('.adminReportBlockBtn').forEach(b=>b.onclick=async()=>{
+  const r=reports.find(x=>x.id===b.dataset.rid);if(!r||!r.targetAuthorUid)return;
+  if(!confirm(tr('confirmBlockUser')))return;
+  try{
+   await fbDb.collection('users').doc(r.targetAuthorUid).set({blocked:true},{merge:true});
+   await fbDb.collection('reports').doc(b.dataset.rid).set({status:'closed'},{merge:true});
+  }catch(e){}
+  adminRenderReportsBlock();
+  adminRenderUsersBlock();
+ });
 }
 async function renderCartList(){
  const el=$('#cartList');if(!el)return;
@@ -2275,7 +2376,18 @@ if(fbAuth){
  fbAuth.onAuthStateChanged(async u=>{
   AUTH_RESOLVED=true;CUR_USER=u;
   const justSignedIn=!!u&&!WAS_SIGNED_IN;WAS_SIGNED_IN=!!u;
-  if(u){await loadCurProfile();startPresence()}else{stopPresence();CUR_PROFILE={displayName:'',photoURL:'',cart:[]}}
+  if(u){
+   await loadCurProfile();
+   if(CUR_PROFILE.blocked){
+    alert(tr('accountBlockedMsg'));
+    CUR_USER=null;WAS_SIGNED_IN=false;
+    stopPresence();CUR_PROFILE={displayName:'',photoURL:'',cart:[],blocked:false};
+    try{await fbAuth.signOut()}catch(e){}
+    renderAuthBox();updateGateVisibility();chatSetBtnVisible(false);
+    return;
+   }
+   startPresence();
+  }else{stopPresence();CUR_PROFILE={displayName:'',photoURL:'',cart:[],blocked:false}}
   renderAuthBox();updateGateVisibility();
   chatSetBtnVisible(!!u);
   if(justSignedIn)go('forecast');
