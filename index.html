@@ -283,10 +283,17 @@ nav button,.navMoreMenu button{display:inline-flex;align-items:center;gap:6px}
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4.3.3/dist/email.min.js"></script>
 <script>
 const firebaseConfig={apiKey:"AIzaSyC_NJCK3BeeKqVySqcLp__l6JsoYzG3Elg",authDomain:"fishing-club-samtskhe.firebaseapp.com",projectId:"fishing-club-samtskhe",storageBucket:"fishing-club-samtskhe.firebasestorage.app",messagingSenderId:"605763843083",appId:"1:605763843083:web:63123b1481d069a12f830e"};
 let fbApp=null,fbAuth=null,fbDb=null,CUR_USER=null;
 try{fbApp=firebase.initializeApp(firebaseConfig);fbAuth=firebase.auth();fbDb=firebase.firestore()}catch(e){console.error('Firebase init failed',e)}
+/* === EmailJS-ის პარამეტრები — შეავსე EmailJS-ზე რეგისტრაციის შემდეგ (იხილე ინსტრუქცია) === */
+const EMAILJS_PUBLIC_KEY='PASTE_YOUR_PUBLIC_KEY_HERE';
+const EMAILJS_SERVICE_ID='PASTE_YOUR_SERVICE_ID_HERE';
+const EMAILJS_TEMPLATE_ID='PASTE_YOUR_TEMPLATE_ID_HERE';
+try{if(typeof emailjs!=='undefined'&&!EMAILJS_PUBLIC_KEY.startsWith('PASTE_'))emailjs.init({publicKey:EMAILJS_PUBLIC_KEY})}catch(e){}
+const ADMIN_EMAILS=['paata.khitarishvili@gmail.com'];
 </script>
 <script>
 /* ===== მონაცემები — საიტის საკუთარი ფაილიდან (index-C3mUJ6M0.js) ===== */
@@ -815,7 +822,20 @@ V.profile=()=>{
     <div class="ok" id="pf_pwOk" hidden></div>
     <button type="submit" class="btn">${tr('profileChangePassword')}</button>
    </form>`:''}
+   ${isAdmin()?`<hr style="border-color:var(--ln);margin:18px 0">
+   <div id="adminBlock">
+    <div style="font-size:12px;color:var(--mu);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">${tr('adminSectionTitle')}</div>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+     <input type="checkbox" id="admin_notifyToggle">
+     <span>${tr('adminNotifyToggle')}</span>
+    </label>
+   </div>`:''}
   </div>`;
+ if(isAdmin()){
+  getAppSettings().then(s=>{const cb=$('#admin_notifyToggle');if(cb)cb.checked=!!s.notifyOnRegister});
+  const cb=$('#admin_notifyToggle');
+  if(cb)cb.onchange=()=>setAppSetting('notifyOnRegister',cb.checked);
+ }
  $('#pf_photoBtn').onclick=()=>$('#pf_photo').click();
  $('#pf_photo').onchange=e=>profileHandlePhoto(e.target.files&&e.target.files[0]);
  $('#pf_nameForm').onsubmit=async e=>{
@@ -1125,6 +1145,8 @@ forumPublish:{ka:'გამოქვეყნება',en:'Publish',ru:'Опу�
 forumSendComment:{ka:'კომენტარის გაგზავნა',en:'Send comment',ru:'Отправить комментарий'},
 forumCommentPlaceholder:{ka:'დაწერე კომენტარი...',en:'Write a comment...',ru:'Напишите комментарий...'},
 forumNoComments:{ka:'ჯერ არავის უწერია კომენტარი',en:'No comments yet',ru:'Пока нет комментариев'},
+adminSectionTitle:{ka:'ადმინის პარამეტრები',en:'Admin settings',ru:'Настройки администратора'},
+adminNotifyToggle:{ka:'მეილის გაგზავნა ახალი რეგისტრაციისას',en:'Email me on new registrations',ru:'Письмо при новой регистрации'},
 };
 function tr(k){return (UI[k]&&(UI[k][LANG]||UI[k].ka))||''}
 function authErrMsg(code){
@@ -1183,6 +1205,33 @@ async function loadCurProfile(){
   CUR_PROFILE={displayName:d.displayName||CUR_USER.displayName||'',photoURL:d.photoURL||CUR_USER.photoURL||''};
  }catch(e){CUR_PROFILE={displayName:CUR_USER.displayName||'',photoURL:CUR_USER.photoURL||''}}
  renderAuthBox();
+}
+function isAdmin(){return !!(CUR_USER&&CUR_USER.email&&ADMIN_EMAILS.includes(CUR_USER.email.toLowerCase()));}
+async function getAppSettings(){
+ const d={notifyOnRegister:true};
+ if(!fbDb)return d;
+ try{
+  const snap=await fbDb.collection('settings').doc('app').get();
+  if(snap.exists)Object.assign(d,snap.data());
+ }catch(e){}
+ return d;
+}
+async function setAppSetting(key,val){
+ if(!fbDb||!isAdmin())return;
+ try{await fbDb.collection('settings').doc('app').set({[key]:val},{merge:true})}catch(e){}
+}
+async function notifyAdminOfRegistration(user){
+ if(!user)return;
+ try{
+  if(typeof emailjs==='undefined'||EMAILJS_PUBLIC_KEY.startsWith('PASTE_'))return;
+  const settings=await getAppSettings();
+  if(!settings.notifyOnRegister)return;
+  await emailjs.send(EMAILJS_SERVICE_ID,EMAILJS_TEMPLATE_ID,{
+   user_email:user.email||'',
+   user_name:user.displayName||user.email||'',
+   time:new Date().toLocaleString('ka-GE')
+  });
+ }catch(e){/* მეილის გაუგზავნელობა საიტს არ აჩერებს */}
 }
 function fmtDate(ts){
  if(!ts)return'';
@@ -1274,6 +1323,7 @@ function renderGateContent(){
     if(pw!==pw2){err.textContent=tr('authErrPasswordMismatch');err.hidden=false;return}
     const cred=await fbAuth.createUserWithEmailAndPassword(email,pw);
     if(name&&cred.user)await cred.user.updateProfile({displayName:name});
+    notifyAdminOfRegistration(cred.user);
    }else{
     const pw=el.querySelector('#gf_pw').value;
     await fbAuth.signInWithEmailAndPassword(email,pw);
@@ -1290,7 +1340,8 @@ function renderGateContent(){
    if(!fbAuth)return;
    try{
     const provider=new firebase.auth.GoogleAuthProvider();
-    await fbAuth.signInWithPopup(provider);
+    const result=await fbAuth.signInWithPopup(provider);
+    if(result&&result.additionalUserInfo&&result.additionalUserInfo.isNewUser)notifyAdminOfRegistration(result.user);
    }catch(ex){err.textContent=authErrMsg(ex&&ex.code);err.hidden=false}
   };
   const fgb=el.querySelector('#gf_forgot');
@@ -1428,6 +1479,7 @@ function authModal(mode0){
      if(pw!==pw2){err.textContent=tr('authErrPasswordMismatch');err.hidden=false;return}
      const cred=await fbAuth.createUserWithEmailAndPassword(email,pw);
      if(name&&cred.user)await cred.user.updateProfile({displayName:name});
+     notifyAdminOfRegistration(cred.user);
      close();
     }else{
      const pw=o.querySelector('#af_pw').value;
@@ -1446,7 +1498,8 @@ function authModal(mode0){
     if(!fbAuth)return;
     try{
      const provider=new firebase.auth.GoogleAuthProvider();
-     await fbAuth.signInWithPopup(provider);
+     const result=await fbAuth.signInWithPopup(provider);
+     if(result&&result.additionalUserInfo&&result.additionalUserInfo.isNewUser)notifyAdminOfRegistration(result.user);
      close();
     }catch(ex){err.textContent=authErrMsg(ex&&ex.code);err.hidden=false}
    };
