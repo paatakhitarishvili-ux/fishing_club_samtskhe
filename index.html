@@ -886,6 +886,7 @@ function renderAuthBox(){
   const btn=el.querySelector('#loginTrigger');
   if(btn)btn.onclick=()=>authModal();
  }
+ if(typeof layoutNav==='function')requestAnimationFrame(layoutNav);
 }
 let GATE_MODE='login';
 function renderGateContent(){
