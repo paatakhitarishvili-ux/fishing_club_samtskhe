@@ -621,11 +621,12 @@ const pick=id=>{cur=id;curSpot=null;store.set('loc',id);go('forecast')};
 
 V.forecast=async()=>{
  const ord=store.get('ord',0),list=ord?[...LOCS].sort((a,b)=>a.n.localeCompare(b.n,'ka')):LOCS,base=loc(cur),spot=(base.spots||[]).find(x=>x.id===curSpot),l=spot?{...base,n:base.n+' — '+spot.name,c:[spot.lat,spot.lng],ff:spot.fish.filter(x=>FISH[x.speciesId]),f:spot.fish.map(x=>x.speciesId).filter(x=>FISH[x]),shore:spot.shoreFishing,boat:spot.boatFishing,d:spot.description||base.d}:base;CUR_KEY=spot?base.id+':'+spot.id:base.id;CUR_FISH=l.ff;CUR_NAME=l.n;
- $('#app').innerHTML=`<div class="selrow"><div class="cb" id="cb"><button type="button" class="cbb" id="cbb"><span>${esc(base.n)}</span><span>▾</span></button><div class="cbp" id="cbp" hidden><input id="lq" placeholder="${tr('searchPlaceholder')}" autocomplete="off"><div class="cbl" id="cbl"></div></div></div><button class="btn g" id="fv">${store.get('mine',[]).includes(cur)?'★':'☆'}</button><button class="btn g" id="od">${tr('sortOrder')}</button></div>${(base.spots||[]).length?`<div class="selrow"><select id="sp" aria-label="${tr('spotAria')}"><option value="">${tr('wholeWaterBody')}</option>${[...base.spots].sort((a,b)=>a.sortOrder-b.sortOrder).map(x=>`<option value="${x.id}" ${x.id===curSpot?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>`:''}<div id="out" class="empty">${tr('loading')}</div>`;
+ $('#app').innerHTML=`<div class="selrow"><div class="cb" id="cb"><button type="button" class="cbb" id="cbb"><span>${esc(base.n)}</span><span>▾</span></button><div class="cbp" id="cbp" hidden><input id="lq" placeholder="${tr('searchPlaceholder')}" autocomplete="off"><div class="cbl" id="cbl"></div></div></div><button class="btn g" id="fv">${store.get('mine',[]).includes(cur)?'★':'☆'}</button><button class="btn g" id="od">${tr('sortOrder')}</button></div>${(base.spots||[]).length?`<div class="selrow"><select id="sp" aria-label="${tr('spotAria')}"><option value="">${tr('wholeWaterBody')}</option>${[...base.spots].sort((a,b)=>a.sortOrder-b.sortOrder).map(x=>`<option value="${x.id}" ${x.id===curSpot?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>`:''}<div id="out" class="empty">${tr('loading')}</div><div id="locComments" style="margin-top:28px"></div>`;
  initCb(list);
  if($('#sp'))$('#sp').onchange=e=>{curSpot=e.target.value?+e.target.value:null;V.forecast()};
  $('#od').onclick=()=>{store.set('ord',ord?0:1);V.forecast()};
  $('#fv').onclick=()=>{let m=store.get('mine',[]);m=m.includes(cur)?m.filter(x=>x!==cur):[...m,cur];store.set('mine',m);$('#fv').textContent=m.includes(cur)?'★':'☆'};
+ renderLocComments(CUR_KEY);
  let rows;try{rows=await weather(l)}catch{$('#out').textContent=tr('weatherLoadFail');return}
  await kpP;
  const now=new Date(),days={};rows.forEach(r=>(days[r.day]=days[r.day]||[]).push(r));
@@ -860,6 +861,65 @@ function forumShowEditor(opts){
  };
 }
 V.forum=()=>forumShowList();
+
+/* ===== წყალსატევის კომენტარები/ფოტოები ===== */
+function locCommentsCol(){return fbDb&&fbDb.collection('locComments')}
+async function loadLocComments(locId){
+ if(!locCommentsCol())return[];
+ try{
+  const snap=await locCommentsCol().where('locId','==',locId).orderBy('createdAt','desc').limit(200).get();
+  return snap.docs.map(d=>({id:d.id,...d.data()}));
+ }catch(e){return[]}
+}
+function locCommentRowHtml(c){
+ const meta=cachedMeta(c.authorUid)||{displayName:c.authorName,photoURL:c.authorPhoto,online:false};
+ const canDelete=CUR_USER&&(isAdmin()||c.authorUid===CUR_USER.uid);
+ const canReport=CUR_USER&&c.authorUid!==CUR_USER.uid;
+ return `<div class="card" style="margin-bottom:8px" data-cid="${c.id}"><div class="fiTop">${avatarDotHtml(meta,24)}<div class="fiMeta"><b style="font-size:13px">${esc(meta.displayName||c.authorName||'')}</b><small>${fmtDate(c.createdAt)}</small></div><div style="margin-left:auto;display:flex;gap:8px">${canReport?`<button type="button" class="authlink lcReport" data-cid="${c.id}">${tr('reportBtn')}</button>`:''}${canDelete?`<button type="button" class="authlink lcDel" data-cid="${c.id}">${tr('forumDeleteComment')}</button>`:''}</div></div>${c.text?`<p style="margin-top:8px;white-space:pre-wrap">${esc(c.text)}</p>`:''}${c.photo?`<img src="${c.photo}" style="max-width:260px;max-height:260px;border-radius:10px;margin-top:8px;display:block">`:''}</div>`;
+}
+async function renderLocComments(locId){
+ const el=$('#locComments');if(!el)return;
+ el.innerHTML=`<h2>${tr('locCommentsHeading')}</h2><div id="locCommentsList" class="empty">${tr('wxLoading')}</div>
+  <form id="locCommentForm" class="authform" style="margin-top:10px">
+   <textarea id="lc_text" placeholder="${tr('locCommentPlaceholder')}" rows="3" style="width:100%;resize:vertical;font:inherit;background:var(--s1);color:var(--tx);border:1px solid var(--ln);border-radius:10px;padding:10px"></textarea>
+   <label style="display:block;font-size:12px;color:var(--mu);margin:6px 0 2px">${tr('locCommentPhotoLabel')}</label>
+   <input type="file" id="lc_photo" accept="image/*" style="margin-bottom:8px">
+   <div class="err" id="lc_err" hidden></div>
+   <button type="submit" class="btn" style="margin-top:4px">${tr('locCommentSend')}</button>
+  </form>`;
+ const comments=await loadLocComments(locId);
+ if($('#locComments')!==el)return;
+ await loadMetas(comments.map(c=>c.authorUid));
+ const listEl=$('#locCommentsList');if(!listEl)return;
+ listEl.className='';
+ listEl.innerHTML=comments.map(locCommentRowHtml).join('')||`<div class="empty">${tr('locCommentsEmpty')}</div>`;
+ listEl.querySelectorAll('.lcDel').forEach(b=>b.onclick=async()=>{
+  if(!confirm(tr('confirmDelete')))return;
+  try{await locCommentsCol().doc(b.dataset.cid).delete()}catch(e){}
+  renderLocComments(locId);
+ });
+ listEl.querySelectorAll('.lcReport').forEach(b=>b.onclick=()=>{
+  const c=comments.find(x=>x.id===b.dataset.cid);if(!c)return;
+  submitReport('locComment',c.id,c.authorUid,c.authorName,c.text||tr('locCommentPhotoLabel'),c.locId);
+ });
+ const form=$('#locCommentForm');
+ form.onsubmit=async e=>{
+  e.preventDefault();
+  const err=$('#lc_err');err.hidden=true;
+  const text=$('#lc_text').value.trim();
+  const file=$('#lc_photo').files&&$('#lc_photo').files[0];
+  if(!text&&!file)return;
+  if(!CUR_USER||!locCommentsCol()){err.textContent=tr('authErrGeneric');err.hidden=false;return}
+  try{
+   const nm=CUR_PROFILE.displayName||CUR_USER.displayName||CUR_USER.email||'';
+   const photoAv=CUR_PROFILE.photoURL||CUR_USER.photoURL||'';
+   let photo=null;
+   if(file)photo=await resizeImageFile(file,900,0.75);
+   await locCommentsCol().add({locId,text,photo,authorUid:CUR_USER.uid,authorName:nm,authorPhoto:photoAv,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+   renderLocComments(locId);
+  }catch(ex){err.textContent=tr('authErrGeneric');err.hidden=false}
+ };
+}
 
 /* ===== მაღაზია ===== */
 function resizeImageFile(file,maxDim,quality){
@@ -1650,6 +1710,12 @@ adminReportsEmpty:{ka:'პრეტენზიები არ არის',en
 adminReportTypeTopic:{ka:'ფორუმის თემა',en:'Forum topic',ru:'Тема форума'},
 adminReportTypeComment:{ka:'კომენტარი',en:'Comment',ru:'Комментарий'},
 adminReportTypeShop:{ka:'მაღაზიის განცხადება',en:'Shop listing',ru:'Объявление магазина'},
+adminReportTypeLocComment:{ka:'წყალსატევის კომენტარი',en:'Water body comment',ru:'Комментарий к водоёму'},
+locCommentsHeading:{ka:'კომენტარები და ფოტოები',en:'Comments & photos',ru:'Комментарии и фото'},
+locCommentsEmpty:{ka:'კომენტარები ჯერ არ არის — იყავი პირველი',en:'No comments yet — be the first',ru:'Пока нет комментариев — будьте первым'},
+locCommentPlaceholder:{ka:'დაწერე კომენტარი ამ წყალსატევის შესახებ...',en:'Write a comment about this water body...',ru:'Напишите комментарий об этом водоёме...'},
+locCommentPhotoLabel:{ka:'ფოტო (არასავალდებულო)',en:'Photo (optional)',ru:'Фото (необязательно)'},
+locCommentSend:{ka:'გამოქვეყნება',en:'Post',ru:'Опубликовать'},
 adminReportedBy:{ka:'საიდან',en:'Reported by',ru:'От кого'},
 adminReportTargetAuthor:{ka:'ავტორი',en:'Author',ru:'Автор'},
 adminReportView:{ka:'ნახვა',en:'View',ru:'Просмотр'},
@@ -1994,7 +2060,7 @@ async function adminLoadReports(){
   return snap.docs.map(d=>({id:d.id,...d.data()}));
  }catch(e){return[]}
 }
-function adminReportTypeLabel(t){return t==='shop'?tr('hShop'):t==='forumTopic'?tr('adminReportTypeTopic'):tr('adminReportTypeComment')}
+function adminReportTypeLabel(t){return t==='shop'?tr('hShop'):t==='forumTopic'?tr('adminReportTypeTopic'):t==='locComment'?tr('adminReportTypeLocComment'):tr('adminReportTypeComment')}
 function adminReportRowHtml(r){
  return `<div class="fiTop" style="padding:8px 0;border-bottom:1px solid var(--ln);align-items:flex-start" data-rid="${r.id}">
   <div class="fiMeta">
@@ -2019,6 +2085,9 @@ async function adminRenderReportsBlock(){
   if(r.targetType==='shop')shopRouteFromBanner(r.targetId);
   else if(r.targetType==='forumTopic')forumShowTopic(r.targetId);
   else if(r.targetType==='forumComment'&&r.topicId)forumShowTopic(r.topicId);
+  else if(r.targetType==='locComment'&&r.topicId){
+   const parts=String(r.topicId).split(':');cur=parts[0];curSpot=parts[1]?+parts[1]:null;go('forecast');
+  }
  });
  el.querySelectorAll('.adminReportCloseBtn').forEach(b=>b.onclick=async()=>{
   try{await fbDb.collection('reports').doc(b.dataset.rid).set({status:'closed'},{merge:true})}catch(e){}
