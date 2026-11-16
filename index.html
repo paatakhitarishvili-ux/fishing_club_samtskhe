@@ -1691,16 +1691,31 @@ let CHAT_OPEN=false,CHAT_CURRENT_UID=null,CHAT_POLL=null,CHAT_BADGE_POLL=null;
 function chatSetBtnVisible(show){
  const b=$('#chatBtn');if(!b)return;
  b.hidden=!show;
- if(show){chatRestoreBtnPos();chatStartBadgePolling()}
+ if(show){chatApplyBtnPos();chatStartBadgePolling()}
  else{chatStopBadgePolling();chatClosePanel()}
 }
-function chatRestoreBtnPos(){
- const b=$('#chatBtn');if(!b)return;
+function chatViewportW(){return (window.visualViewport&&window.visualViewport.width)||window.innerWidth}
+function chatViewportH(){return (window.visualViewport&&window.visualViewport.height)||window.innerHeight}
+function chatApplyBtnPos(){
+ const b=$('#chatBtn');if(!b||b.hidden)return;
  const pos=store.get('chatBtnPos',null);
  if(pos&&typeof pos.x==='number'&&typeof pos.y==='number'){
-  b.style.left=pos.x+'px';b.style.top=pos.y+'px';b.style.right='auto';b.style.bottom='auto';
+  // მომხმარებლის მიერ ხელით გადათრეული პოზიცია — უცვლელად ყოველთვის იქ ჩერდება
+  let x=Math.max(4,Math.min(chatViewportW()-b.offsetWidth-4,pos.x));
+  let y=Math.max(4,Math.min(chatViewportH()-b.offsetHeight-4,pos.y));
+  b.style.left=x+'px';b.style.top=y+'px';b.style.right='auto';b.style.bottom='auto';
+  return;
  }
+ // ნაგულისხმევი პოზიცია — მარჯვენა ქვედა კუთხე, რეალურად ხილული ეკრანის მიხედვით
+ // (მობილურში ბრაუზერის მისამართების ველის გამოჩენა/დამალვა ცვლის ხილულ სიმაღლეს)
+ const m=22;
+ b.style.left=(chatViewportW()-b.offsetWidth-m)+'px';
+ b.style.top=(chatViewportH()-b.offsetHeight-m)+'px';
+ b.style.right='auto';b.style.bottom='auto';
 }
+if(window.visualViewport)window.visualViewport.addEventListener('resize',()=>chatApplyBtnPos());
+window.addEventListener('resize',()=>chatApplyBtnPos());
+window.addEventListener('orientationchange',()=>setTimeout(chatApplyBtnPos,200));
 function chatInitDrag(){
  const b=$('#chatBtn');if(!b||b.dataset.dragInit)return;
  b.dataset.dragInit='1';
@@ -1716,8 +1731,8 @@ function chatInitDrag(){
   if(Math.abs(dx)>5||Math.abs(dy)>5)moved=true;
   if(!moved)return;
   let nx=origX+dx,ny=origY+dy;
-  nx=Math.max(4,Math.min(window.innerWidth-b.offsetWidth-4,nx));
-  ny=Math.max(4,Math.min(window.innerHeight-b.offsetHeight-4,ny));
+  nx=Math.max(4,Math.min(chatViewportW()-b.offsetWidth-4,nx));
+  ny=Math.max(4,Math.min(chatViewportH()-b.offsetHeight-4,ny));
   b.style.left=nx+'px';b.style.top=ny+'px';b.style.right='auto';b.style.bottom='auto';
   if(CHAT_OPEN)positionChatPanel();
  }
@@ -1740,12 +1755,13 @@ function chatToggle(){if(CHAT_OPEN)chatClosePanel();else chatOpenPanel()}
 function positionChatPanel(){
  const b=$('#chatBtn'),p=$('#chatPanel');if(!b||!p)return;
  const r=b.getBoundingClientRect();
+ const vw=chatViewportW(),vh=chatViewportH();
  const pw=p.offsetWidth||340,ph=p.offsetHeight||460;
  let left=r.right-pw,top=r.top-ph-10;
- if(top<8)top=Math.min(r.bottom+10,window.innerHeight-ph-8);
+ if(top<8)top=Math.min(r.bottom+10,vh-ph-8);
  if(left<8)left=8;
- if(left+pw>window.innerWidth-8)left=window.innerWidth-8-pw;
- if(top+ph>window.innerHeight-8)top=window.innerHeight-8-ph;
+ if(left+pw>vw-8)left=vw-8-pw;
+ if(top+ph>vh-8)top=vh-8-ph;
  if(top<8)top=8;
  p.style.left=left+'px';p.style.top=top+'px';p.style.right='auto';p.style.bottom='auto';
 }
