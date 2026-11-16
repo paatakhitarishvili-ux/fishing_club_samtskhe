@@ -89,15 +89,15 @@ body.gated #app,body.gated header{visibility:hidden}
 .shopThumb{aspect-ratio:4/3;background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:40px;overflow:hidden}
 .shopThumb img{width:100%;height:100%;object-fit:cover;display:block}
 .shopCardBody{padding:12px}
-.sideBanner{position:fixed;top:120px;width:160px;max-height:300px;background:var(--s1);border:1px solid var(--ln);border-radius:12px;padding:10px;box-shadow:0 2px 10px rgba(0,0,0,.15);z-index:5;cursor:pointer;overflow:hidden;display:none}
-.sideBanner:empty{display:none!important}
+.bannerCol{position:fixed;top:110px;display:none;flex-direction:column;gap:14px;z-index:5;max-height:calc(100vh - 130px);overflow:hidden}
+#bannerColLeft{left:20px}
+#bannerColRight{right:20px}
+@media (min-width:1480px){.bannerCol.show{display:flex}}
+.sideBanner{width:160px;background:var(--s1);border:1px solid var(--ln);border-radius:12px;padding:10px;box-shadow:0 2px 10px rgba(0,0,0,.15);cursor:pointer;overflow:hidden;flex:none}
+.sideBanner.placeholder{cursor:default;display:flex;align-items:center;justify-content:center;min-height:90px;color:var(--mu);font-size:12px;text-align:center;border-style:dashed;opacity:.55}
 .sideBanner img{width:100%;border-radius:8px;display:block;margin-bottom:8px;aspect-ratio:4/3;object-fit:cover}
 .sideBanner .sbTitle{font-weight:700;font-size:13px;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .sideBanner .sbSub{font-size:12px;color:var(--mu)}
-.sideBanner .sbTag{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--mu);margin-bottom:6px}
-#bannerLeft{left:20px}
-#bannerRight{right:20px}
-@media (min-width:1480px){.sideBanner.show{display:block}}
 .bannerAdminForm{border:1px solid var(--ln);border-radius:10px;padding:12px;margin-bottom:12px}
 .bannerAdminForm h4{margin:0 0 8px;font-size:13px}
 .profAv{width:72px;height:72px;border-radius:50%;background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;overflow:hidden;flex:none}
@@ -294,9 +294,9 @@ nav button,.navMoreMenu button{display:inline-flex;align-items:center;gap:6px}
 </div>
 <div class="agformPane"><div class="agbox" id="agbox"><div class="agspinwrap"><div class="agspin"></div></div></div></div>
 </div>
-<div class="sideBanner" id="bannerLeft"></div>
+<div class="bannerCol" id="bannerColLeft"></div>
 <main id="app"></main>
-<div class="sideBanner" id="bannerRight"></div>
+<div class="bannerCol" id="bannerColRight"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
@@ -963,36 +963,30 @@ function shopShowEditor(opts){
 V.shop=()=>shopShowList();
 
 /* ===== საარეკლამო ბანერები (მთავარ გვერდზე) ===== */
+const BANNER_SLOTS_PER_SIDE=3;
+const BANNER_TOTAL=BANNER_SLOTS_PER_SIDE*2;
 let BANNER_CACHE=null,BANNER_CACHE_T=0,BANNER_GEN=0;
+function defaultBannerSlots(){
+ return Array.from({length:BANNER_TOTAL},()=>({mode:'auto',itemId:'',title:'',link:'',imageURL:''}));
+}
+function normalizeBannerSlots(raw){
+ if(!Array.isArray(raw)||raw.length!==BANNER_TOTAL)return defaultBannerSlots();
+ return raw.map(s=>Object.assign({mode:'auto',itemId:'',title:'',link:'',imageURL:''},s||{}));
+}
 async function loadBannerData(force){
  const now=Date.now();
  if(!force&&BANNER_CACHE&&now-BANNER_CACHE_T<300000)return BANNER_CACHE;
- let topItems=[];
+ let rankedItems=[];
  try{
   if(shopCol()){
-   const snap=await shopCol().orderBy('views','desc').limit(2).get();
-   topItems=snap.docs.map(d=>({id:d.id,...d.data()}));
+   const snap=await shopCol().orderBy('views','desc').limit(50).get();
+   rankedItems=snap.docs.map(d=>({id:d.id,...d.data()}));
   }
  }catch(e){}
  const settings=await getAppSettings();
- BANNER_CACHE={topItems,left:settings.bannerLeftOverride,right:settings.bannerRightOverride};
+ BANNER_CACHE={rankedItems,slots:normalizeBannerSlots(settings.bannerSlots)};
  BANNER_CACHE_T=now;
  return BANNER_CACHE;
-}
-function bannerSlotRender(el,override,fallbackItem){
- if(override&&override.enabled){
-  el.innerHTML=`${override.imageURL?`<img src="${override.imageURL}" alt="">`:''}<div class="sbTitle">${esc(override.title||'')}</div>`;
-  el.classList.add('show');
-  el.onclick=override.link?()=>window.open(override.link,'_blank'):null;
-  return;
- }
- if(fallbackItem){
-  el.innerHTML=`${fallbackItem.photoURL?`<img src="${fallbackItem.photoURL}" alt="">`:''}<div class="sbTitle">${esc(fallbackItem.title)}</div><div class="sbSub">${fmtShopPrice(fallbackItem.price)}</div>`;
-  el.classList.add('show');
-  el.onclick=()=>{shopRouteFromBanner(fallbackItem.id)};
-  return;
- }
- el.innerHTML='';el.classList.remove('show');el.onclick=null;
 }
 function shopRouteFromBanner(id){
  navState('shop/i/'+id);
@@ -1001,53 +995,113 @@ function shopRouteFromBanner(id){
  toggleSideBanners(false);
 }
 async function renderSideBanners(gen){
- const L=$('#bannerLeft'),R=$('#bannerRight');if(!L||!R)return;
+ const colL=$('#bannerColLeft'),colR=$('#bannerColRight');if(!colL||!colR)return;
  const data=await loadBannerData();
  if(gen!==BANNER_GEN)return;
- bannerSlotRender(L,data.left,data.topItems[0]);
- bannerSlotRender(R,data.right,data.topItems[1]);
+ const pickIds=[...new Set(data.slots.filter(s=>s.mode==='pick'&&s.itemId).map(s=>s.itemId))];
+ const pickMap={};
+ if(pickIds.length&&shopCol()){
+  await Promise.all(pickIds.map(async id=>{
+   try{const d=await shopCol().doc(id).get();if(d.exists)pickMap[id]={id:d.id,...d.data()}}catch(e){}
+  }));
+ }
+ if(gen!==BANNER_GEN)return;
+ const usedIds=new Set(pickIds);
+ const autoPool=data.rankedItems.filter(it=>!usedIds.has(it.id));
+ let autoIdx=0;
+ function buildSlotEl(slot){
+  const el=document.createElement('div');
+  el.className='sideBanner';
+  if(slot.mode==='custom'&&slot.title){
+   el.innerHTML=`${slot.imageURL?`<img src="${slot.imageURL}" alt="">`:''}<div class="sbTitle">${esc(slot.title)}</div>`;
+   if(slot.link)el.onclick=()=>window.open(slot.link,'_blank');
+   return el;
+  }
+  if(slot.mode==='pick'&&slot.itemId&&pickMap[slot.itemId]){
+   const it=pickMap[slot.itemId];
+   el.innerHTML=`${it.photoURL?`<img src="${it.photoURL}" alt="">`:''}<div class="sbTitle">${esc(it.title)}</div><div class="sbSub">${fmtShopPrice(it.price)}</div>`;
+   el.onclick=()=>shopRouteFromBanner(it.id);
+   return el;
+  }
+  const it=autoPool[autoIdx];
+  if(it){
+   autoIdx++;
+   el.innerHTML=`${it.photoURL?`<img src="${it.photoURL}" alt="">`:''}<div class="sbTitle">${esc(it.title)}</div><div class="sbSub">${fmtShopPrice(it.price)}</div>`;
+   el.onclick=()=>shopRouteFromBanner(it.id);
+   return el;
+  }
+  el.classList.add('placeholder');
+  el.textContent=tr('bannerPlaceholder');
+  return el;
+ }
+ colL.innerHTML='';colR.innerHTML='';
+ for(let i=0;i<BANNER_SLOTS_PER_SIDE;i++)colL.appendChild(buildSlotEl(data.slots[i]));
+ for(let i=0;i<BANNER_SLOTS_PER_SIDE;i++)colR.appendChild(buildSlotEl(data.slots[BANNER_SLOTS_PER_SIDE+i]));
+ colL.classList.add('show');colR.classList.add('show');
 }
 function toggleSideBanners(show){
- const L=$('#bannerLeft'),R=$('#bannerRight');if(!L||!R)return;
+ const colL=$('#bannerColLeft'),colR=$('#bannerColRight');if(!colL||!colR)return;
  BANNER_GEN++;
- if(!show){L.classList.remove('show');R.classList.remove('show');return}
+ if(!show){colL.classList.remove('show');colR.classList.remove('show');return}
  renderSideBanners(BANNER_GEN);
 }
-async function adminSaveBannerOverride(side){
- const titleEl=$('#ab_'+side+'_title'),linkEl=$('#ab_'+side+'_link'),photoEl=$('#ab_'+side+'_photo'),enEl=$('#ab_'+side+'_en'),okEl=$('#ab_'+side+'_ok');
- if(!titleEl)return;
- const cur=(await getAppSettings())[side==='left'?'bannerLeftOverride':'bannerRightOverride']||{};
- let imageURL=cur.imageURL||'';
- const file=photoEl&&photoEl.files&&photoEl.files[0];
- if(file)imageURL=await resizeImageFile(file,700,0.78);
- const val={enabled:!!(enEl&&enEl.checked),title:titleEl.value.trim(),link:(linkEl&&linkEl.value.trim())||'',imageURL};
- await setAppSetting(side==='left'?'bannerLeftOverride':'bannerRightOverride',val);
- BANNER_CACHE=null;
- if(okEl){okEl.hidden=false;setTimeout(()=>{okEl.hidden=true},2000)}
-}
-async function adminClearBannerOverride(side){
- await setAppSetting(side==='left'?'bannerLeftOverride':'bannerRightOverride',{enabled:false,title:'',link:'',imageURL:''});
- BANNER_CACHE=null;
- const f=$('#ab_'+side+'_form');if(f){$('#ab_'+side+'_title').value='';$('#ab_'+side+'_link').value='';$('#ab_'+side+'_en').checked=false}
-}
-function adminBannerFormHtml(side,data){
- const d=data||{};
- return `<div class="bannerAdminForm" id="ab_${side}_form">
-  <h4>${tr(side==='left'?'adminBannerLeft':'adminBannerRight')}</h4>
-  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
-   <input type="checkbox" id="ab_${side}_en" ${d.enabled?'checked':''}>
-   <span>${tr('bannerEnable')}</span>
-  </label>
-  <input type="text" id="ab_${side}_title" placeholder="${tr('bannerTitlePlaceholder')}" value="${esc(d.title||'')}" maxlength="80" style="margin-bottom:8px">
-  <input type="text" id="ab_${side}_link" placeholder="${tr('bannerLinkPlaceholder')}" value="${esc(d.link||'')}" maxlength="300" style="margin-bottom:8px">
-  <label style="display:block;font-size:12px;color:var(--mu);margin:4px 0">${tr('bannerImageLabel')}</label>
-  <input type="file" id="ab_${side}_photo" accept="image/*" style="margin-bottom:8px">
-  <div style="display:flex;gap:8px;align-items:center">
-   <button type="button" class="btn" id="ab_${side}_save">${tr('bannerSave')}</button>
-   <button type="button" class="authlink" id="ab_${side}_clear">${tr('bannerClear')}</button>
-   <span class="ok" id="ab_${side}_ok" hidden>✓</span>
-  </div>
- </div>`;
+async function adminRenderBannerBlock(){
+ const bb=$('#adminBannersBlock');if(!bb)return;
+ const settings=await getAppSettings();
+ const slots=normalizeBannerSlots(settings.bannerSlots);
+ let items=[];
+ try{if(shopCol()){const snap=await shopCol().orderBy('createdAt','desc').limit(200).get();items=snap.docs.map(d=>({id:d.id,...d.data()}))}}catch(e){}
+ const sideLabel=i=>i<BANNER_SLOTS_PER_SIDE?(tr('adminBannerLeft')+' #'+(i+1)):(tr('adminBannerRight')+' #'+(i-BANNER_SLOTS_PER_SIDE+1));
+ bb.innerHTML=slots.map((s,i)=>`<div class="bannerAdminForm" data-slotidx="${i}">
+   <h4>${sideLabel(i)}</h4>
+   <select id="ab_mode_${i}" style="margin-bottom:8px;width:100%">
+    <option value="auto" ${s.mode==='auto'?'selected':''}>${tr('bannerModeAuto')}</option>
+    <option value="pick" ${s.mode==='pick'?'selected':''}>${tr('bannerModePick')}</option>
+    <option value="custom" ${s.mode==='custom'?'selected':''}>${tr('bannerModeCustom')}</option>
+   </select>
+   <div id="ab_pickWrap_${i}" ${s.mode==='pick'?'':'hidden'}>
+    <select id="ab_item_${i}" style="width:100%;margin-bottom:8px">
+     <option value="">${tr('bannerPickPlaceholder')}</option>
+     ${items.map(it=>`<option value="${it.id}" ${s.itemId===it.id?'selected':''}>${esc(it.title)}</option>`).join('')}
+    </select>
+   </div>
+   <div id="ab_customWrap_${i}" ${s.mode==='custom'?'':'hidden'}>
+    <input type="text" id="ab_title_${i}" placeholder="${tr('bannerTitlePlaceholder')}" value="${esc(s.title||'')}" maxlength="80" style="margin-bottom:8px">
+    <input type="text" id="ab_link_${i}" placeholder="${tr('bannerLinkPlaceholder')}" value="${esc(s.link||'')}" maxlength="300" style="margin-bottom:8px">
+    <label style="display:block;font-size:12px;color:var(--mu);margin:4px 0">${tr('bannerImageLabel')}</label>
+    <input type="file" id="ab_photo_${i}" accept="image/*" style="margin-bottom:8px">
+    ${s.imageURL?`<img src="${s.imageURL}" alt="" style="width:60px;border-radius:6px;display:block;margin-bottom:8px">`:''}
+   </div>
+  </div>`).join('')+`<button type="button" class="btn pbtn" id="ab_saveAll">${tr('bannerSave')}</button> <span class="ok" id="ab_saveOk" hidden>✓</span>`;
+ slots.forEach((s,i)=>{
+  const modeSel=$('#ab_mode_'+i);
+  if(modeSel)modeSel.onchange=()=>{
+   const pw=$('#ab_pickWrap_'+i),cw=$('#ab_customWrap_'+i);
+   if(pw)pw.hidden=modeSel.value!=='pick';
+   if(cw)cw.hidden=modeSel.value!=='custom';
+  };
+ });
+ const saveBtn=$('#ab_saveAll');
+ if(saveBtn)saveBtn.onclick=async()=>{
+  const curSlots=normalizeBannerSlots((await getAppSettings()).bannerSlots);
+  const newSlots=await Promise.all(slots.map(async(s,i)=>{
+   const modeEl=$('#ab_mode_'+i);
+   const mode=modeEl?modeEl.value:'auto';
+   if(mode==='pick'){const itemEl=$('#ab_item_'+i);return{mode,itemId:itemEl?itemEl.value:'',title:'',link:'',imageURL:''}}
+   if(mode==='custom'){
+    let imageURL=(curSlots[i]&&curSlots[i].imageURL)||'';
+    const photoEl=$('#ab_photo_'+i);
+    const file=photoEl&&photoEl.files&&photoEl.files[0];
+    if(file)imageURL=await resizeImageFile(file,700,0.78);
+    const titleEl=$('#ab_title_'+i),linkEl=$('#ab_link_'+i);
+    return{mode,itemId:'',title:titleEl?titleEl.value.trim():'',link:linkEl?linkEl.value.trim():'',imageURL};
+   }
+   return{mode:'auto',itemId:'',title:'',link:'',imageURL:''};
+  }));
+  await setAppSetting('bannerSlots',newSlots);
+  BANNER_CACHE=null;
+  const ok=$('#ab_saveOk');if(ok){ok.hidden=false;setTimeout(()=>{ok.hidden=true},2000)}
+ };
 }
 
 /* ===== პროფილის გვერდი ===== */
@@ -1125,18 +1179,8 @@ V.profile=()=>{
   </div>`;
  renderCartList();
  if(isAdmin()){
-  getAppSettings().then(s=>{
-   const cb=$('#admin_notifyToggle');if(cb)cb.checked=!!s.notifyOnRegister;
-   const bb=$('#adminBannersBlock');
-   if(bb){
-    bb.innerHTML=adminBannerFormHtml('left',s.bannerLeftOverride)+adminBannerFormHtml('right',s.bannerRightOverride);
-    ['left','right'].forEach(side=>{
-     const sv=$('#ab_'+side+'_save'),cl=$('#ab_'+side+'_clear');
-     if(sv)sv.onclick=()=>adminSaveBannerOverride(side);
-     if(cl)cl.onclick=()=>adminClearBannerOverride(side);
-    });
-   }
-  });
+  getAppSettings().then(s=>{const cb=$('#admin_notifyToggle');if(cb)cb.checked=!!s.notifyOnRegister});
+  adminRenderBannerBlock();
   const cb=$('#admin_notifyToggle');
   if(cb)cb.onchange=()=>setAppSetting('notifyOnRegister',cb.checked);
   adminLoadUsers().then(users=>{
@@ -1504,12 +1548,15 @@ confirmDelete:{ka:'დარწმუნებული ხარ, რომ წ
 adminBannersTitle:{ka:'საარეკლამო ბანერები',en:'Ad banners',ru:'Рекламные баннеры'},
 adminBannerLeft:{ka:'მარცხენა ბანერი',en:'Left banner',ru:'Левый баннер'},
 adminBannerRight:{ka:'მარჯვენა ბანერი',en:'Right banner',ru:'Правый баннер'},
-bannerEnable:{ka:'ჩემი განცხადება (გამორთვისას — ავტომატურად ყველაზე ნანახი ნივთი)',en:'My own announcement (off = auto most-viewed item)',ru:'Моё объявление (выкл. = авто самый просматриваемый товар)'},
+bannerModeAuto:{ka:'ავტომატურად (ყველაზე ნანახი ნივთი)',en:'Automatic (most-viewed item)',ru:'Автоматически (самый просматриваемый товар)'},
+bannerModePick:{ka:'ავირჩევ კონკრეტულ განცხადებას',en:'Pick a specific listing',ru:'Выбрать конкретное объявление'},
+bannerModeCustom:{ka:'საკუთარი ტექსტი/ფოტო/ლინკი',en:'My own text/photo/link',ru:'Свой текст/фото/ссылка'},
+bannerPickPlaceholder:{ka:'— აირჩიე მაღაზიის განცხადება —',en:'— choose a shop listing —',ru:'— выберите объявление —'},
+bannerPlaceholder:{ka:'რეკლამის ადგილი',en:'Ad space',ru:'Место для рекламы'},
 bannerTitlePlaceholder:{ka:'ბანერის სათაური',en:'Banner title',ru:'Заголовок баннера'},
 bannerLinkPlaceholder:{ka:'ლინკი (არასავალდებულო)',en:'Link (optional)',ru:'Ссылка (необязательно)'},
 bannerImageLabel:{ka:'ბანერის ფოტო',en:'Banner photo',ru:'Фото баннера'},
-bannerSave:{ka:'შენახვა',en:'Save',ru:'Сохранить'},
-bannerClear:{ka:'გასუფთავება',en:'Clear',ru:'Сбросить'},
+bannerSave:{ka:'ყველას შენახვა',en:'Save all',ru:'Сохранить все'},
 forumDeleteTopic:{ka:'თემის წაშლა',en:'Delete topic',ru:'Удалить тему'},
 forumDeleteComment:{ka:'წაშლა',en:'Delete',ru:'Удалить'},
 shopDeleteItem:{ka:'განცხადების წაშლა',en:'Delete listing',ru:'Удалить объявление'},
